@@ -63,7 +63,7 @@ IMAGE_PATH=""
 COLOR_HEX=""
 MODE=""
 SCHEME_TYPE="scheme-tonal-spot"
-PREFER="closest-to-fallback"
+PREFER="saturation"
 CONTRAST=""
 SYNC_ICONS=true
 EXPLICIT_MODE=false
@@ -248,7 +248,9 @@ EOF
 MATUGEN_ARGS=()
 if [[ -n "$IMAGE_PATH" ]]; then
   MATUGEN_ARGS+=(image "$IMAGE_PATH")
-  if [[ -n "$PREFER" ]]; then
+  if [[ "$PREFER" == "closest-to-fallback" ]]; then
+    MATUGEN_ARGS+=(--prefer "$PREFER" --fallback-color "#3584e4")
+  elif [[ -n "$PREFER" ]]; then
     MATUGEN_ARGS+=(--prefer "$PREFER")
   fi
 else
