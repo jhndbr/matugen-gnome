@@ -124,7 +124,6 @@ if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
 
   if [[ "$URI" =~ ^file:// ]]; then
     IMAGE_PATH="${URI#file://}"
-    # Decode URL-encoded spaces / characters if needed
     IMAGE_PATH="$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$IMAGE_PATH" 2>/dev/null || echo "$IMAGE_PATH")"
   else
     IMAGE_PATH="$URI"
@@ -133,7 +132,6 @@ fi
 
 if [[ -n "$IMAGE_PATH" && ! -f "$IMAGE_PATH" ]]; then
   echo "⚠️ Warning: Wallpaper '$IMAGE_PATH' not found." >&2
-  # Fallback to default GNOME picture-uri
   URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
   URI="${URI//\'/}"
   IMAGE_PATH="${URI#file://}"
@@ -142,6 +140,57 @@ fi
 if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
   echo "❌ Error: Could not determine an image or color source." >&2
   exit 1
+fi
+
+# Handle .jxl images (Debian 13 default GNOME wallpapers)
+# Matugen's internal rust decoder can panic on large/multi-frame JXL files.
+TEMP_CONVERTED_IMAGE=""
+cleanup_temp() {
+  if [[ -n "$TEMP_CONVERTED_IMAGE" && -f "$TEMP_CONVERTED_IMAGE" ]]; then
+    rm -f "$TEMP_CONVERTED_IMAGE"
+  fi
+  if [[ -n "${TMP_CFG:-}" && -f "$TMP_CFG" ]]; then
+    rm -f "$TMP_CFG"
+  fi
+}
+trap cleanup_temp EXIT
+
+if [[ -n "$IMAGE_PATH" && "${IMAGE_PATH,,}" == *.jxl ]]; then
+  echo "🖼️  Detected JPEG XL (.jxl) image, converting to temporary PNG..."
+  TEMP_CONVERTED_IMAGE="$(mktemp /tmp/matugen_wall_XXXXXX.png)"
+  
+  CONVERTED=false
+  if command -v djxl >/dev/null 2>&1; then
+    if djxl "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
+      CONVERTED=true
+    fi
+  fi
+  
+  if [[ "$CONVERTED" != "true" ]] && command -v magick >/dev/null 2>&1; then
+    if magick "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
+      CONVERTED=true
+    fi
+  fi
+
+  if [[ "$CONVERTED" != "true" ]] && command -v convert >/dev/null 2>&1; then
+    if convert "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
+      CONVERTED=true
+    fi
+  fi
+
+  if [[ "$CONVERTED" != "true" ]] && command -v ffmpeg >/dev/null 2>&1; then
+    if ffmpeg -y -i "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
+      CONVERTED=true
+    fi
+  fi
+
+  if [[ "$CONVERTED" == "true" && -s "$TEMP_CONVERTED_IMAGE" ]]; then
+    IMAGE_PATH="$TEMP_CONVERTED_IMAGE"
+  else
+    echo "⚠️ Could not convert .jxl via djxl/magick/ffmpeg. Falling back to default accent color." >&2
+    IMAGE_PATH=""
+    COLOR_HEX="#3584e4"
+  fi
 fi
 
 echo "🎨 Applying theme: Mode=$MODE | Scheme=$SCHEME_TYPE"
@@ -156,10 +205,6 @@ mkdir -p "$CONFIG_DIR/gtk-3.0" "$CONFIG_DIR/gtk-4.0" "$CONFIG_DIR/qt5ct/colors" 
 
 # Create a temporary config for matugen
 TMP_CFG="$(mktemp --suffix=.toml)"
-cleanup() {
-  rm -f "$TMP_CFG"
-}
-trap cleanup EXIT
 
 cat > "$TMP_CFG" << EOF
 [config]
@@ -198,8 +243,11 @@ if [[ -n "$CONTRAST" ]]; then
   MATUGEN_ARGS+=(--contrast "$CONTRAST")
 fi
 
-# Run Matugen
-"$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"
+# Run Matugen with fallback protection
+if ! "$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"; then
+  echo "⚠️ Matugen failed with the image source. Retrying with fallback color (#3584e4)..." >&2
+  "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
+fi
 
 # Compile GNOME Shell CSS
 echo "⚙️ Compiling GNOME Shell stylesheet..."

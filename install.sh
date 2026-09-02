@@ -28,6 +28,8 @@ if command -v apt-get >/dev/null 2>&1; then
     qt5ct \
     qt6ct \
     inotify-tools \
+    libjxl-tools \
+    imagemagick \
     curl \
     tar \
     xz-utils
@@ -44,7 +46,6 @@ if ! command -v matugen >/dev/null 2>&1 && [[ ! -x "$BIN_DIR/matugen" ]]; then
   echo "📥 Downloading Matugen binary (Linux x86_64)..."
   TMP_DIR="$(mktemp -d)"
   
-  # Try latest release download, fallback to known stable release
   if curl -sL -o "$TMP_DIR/matugen.tar.gz" https://github.com/InioX/matugen/releases/download/v4.2.0/matugen-4.2.0-x86_64.tar.gz; then
     tar -xzf "$TMP_DIR/matugen.tar.gz" -C "$TMP_DIR"
     cp "$TMP_DIR/matugen" "$BIN_DIR/matugen"
