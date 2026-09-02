@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ==============================================================================
 # gnome-matugen-apply
-# Generates and applies Material You color schemes to GNOME (GTK 3/4 & Shell)
+# Generates and applies Material You color schemes to GNOME (GTK 3/4, Shell & Icons)
 # ==============================================================================
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -22,6 +22,7 @@ Options:
   --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
   --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
   --contrast <float>   Contrast value between -1.0 and 1.0 (Default: 0.0)
+  --no-icons           Skip Papirus folder icons color synchronization
   -h, --help           Show this help message
 
 Examples:
@@ -62,6 +63,7 @@ COLOR_HEX=""
 MODE=""
 SCHEME_TYPE="scheme-tonal-spot"
 CONTRAST=""
+SYNC_ICONS=true
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +86,10 @@ while [[ $# -gt 0 ]]; do
     --contrast)
       CONTRAST="${2:-}"
       shift 2
+      ;;
+    --no-icons)
+      SYNC_ICONS=false
+      shift
       ;;
     -h|--help)
       usage
@@ -143,7 +149,6 @@ if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
 fi
 
 # Handle .jxl images (Debian 13 default GNOME wallpapers)
-# Matugen's internal rust decoder can panic on large/multi-frame JXL files.
 TEMP_CONVERTED_IMAGE=""
 cleanup_temp() {
   if [[ -n "$TEMP_CONVERTED_IMAGE" && -f "$TEMP_CONVERTED_IMAGE" ]]; then
@@ -267,6 +272,29 @@ fi
 if gnome-extensions list 2>/dev/null | grep -q 'user-theme'; then
   gsettings set org.gnome.shell.extensions.user-theme name '' || true
   gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' || true
+fi
+
+# ------------------------------------------------------------------------------
+# Synchronize Papirus Folder Icons
+# ------------------------------------------------------------------------------
+if [[ "$SYNC_ICONS" == "true" ]]; then
+  SYNC_ICONS_BIN="$(dirname "$0")/sync-papirus-folders"
+  if [[ ! -x "$SYNC_ICONS_BIN" ]]; then
+    SYNC_ICONS_BIN="$HOME/.local/bin/sync-papirus-folders"
+  fi
+
+  if [[ -x "$SYNC_ICONS_BIN" ]]; then
+    "$SYNC_ICONS_BIN" || true
+
+    # Ensure GNOME uses Papirus icon theme if available
+    if [[ -d "/usr/share/icons/Papirus" || -d "$HOME/.local/share/icons/Papirus" || -d "$HOME/.icons/Papirus" ]]; then
+      if [[ "$MODE" == "dark" ]]; then
+        gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark' || true
+      else
+        gsettings set org.gnome.desktop.interface icon-theme 'Papirus' || true
+      fi
+    fi
+  fi
 fi
 
 echo "✅ Theme applied successfully!"

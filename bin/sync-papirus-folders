@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+import os
+import sys
+import colorsys
+import subprocess
+import shutil
+
+# ==============================================================================
+# sync-papirus-folders
+# Dynamically adapts Papirus icon folder colors based on Material You accent color
+# Operates in user space (~/.local/share/icons) without requiring sudo
+# ==============================================================================
+
+SYSTEM_ICONS_DIR = "/usr/share/icons"
+USER_ICONS_DIR = os.path.expanduser("~/.local/share/icons")
+THEMES = ["Papirus", "Papirus-Dark", "Papirus-Light"]
+
+# Standard Papirus folder colors and their representative RGB / Hue
+PAPIRUS_COLORS = {
+    "blue": (0.60, 0.70, 0.90),      # ~216 deg
+    "bluegrey": (0.58, 0.25, 0.60),
+    "brown": (0.07, 0.55, 0.50),
+    "cyan": (0.52, 0.80, 0.85),      # ~187 deg
+    "green": (0.33, 0.70, 0.75),     # ~120 deg
+    "grey": (0.0, 0.05, 0.60),
+    "indigo": (0.68, 0.65, 0.70),    # ~245 deg
+    "magenta": (0.83, 0.70, 0.80),   # ~300 deg
+    "orange": (0.08, 0.85, 0.95),    # ~30 deg
+    "pink": (0.95, 0.60, 0.90),      # ~340 deg
+    "red": (0.01, 0.85, 0.85),       # ~3 deg
+    "teal": (0.47, 0.75, 0.75),      # ~170 deg
+    "violet": (0.75, 0.65, 0.80),    # ~270 deg
+    "yellow": (0.13, 0.85, 0.95),    # ~48 deg
+    "deeporange": (0.05, 0.90, 0.90),
+    "black": (0.0, 0.0, 0.20),
+}
+
+def hex_to_papirus_color(hex_str):
+    hex_str = hex_str.lstrip("#")
+    if len(hex_str) != 6:
+        return "blue"
+    r = int(hex_str[0:2], 16) / 255.0
+    g = int(hex_str[2:4], 16) / 255.0
+    b = int(hex_str[4:6], 16) / 255.0
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    hue_deg = h * 360.0
+
+    if s < 0.15:
+        if v < 0.25:
+            return "black"
+        elif v < 0.65:
+            return "grey"
+        else:
+            return "bluegrey"
+
+    if hue_deg < 12 or hue_deg >= 350:
+        return "red"
+    elif 12 <= hue_deg < 25:
+        return "deeporange"
+    elif 25 <= hue_deg < 42:
+        return "orange"
+    elif 42 <= hue_deg < 70:
+        return "yellow"
+    elif 70 <= hue_deg < 160:
+        return "green"
+    elif 160 <= hue_deg < 185:
+        return "teal"
+    elif 185 <= hue_deg < 205:
+        return "cyan"
+    elif 205 <= hue_deg < 235:
+        return "blue"
+    elif 235 <= hue_deg < 260:
+        return "indigo"
+    elif 260 <= hue_deg < 290:
+        return "violet"
+    elif 290 <= hue_deg < 330:
+        return "magenta"
+    else:
+        return "pink"
+
+def ensure_user_icons():
+    os.makedirs(USER_ICONS_DIR, exist_ok=True)
+    for theme in THEMES:
+        user_path = os.path.join(USER_ICONS_DIR, theme)
+        system_path = os.path.join(SYSTEM_ICONS_DIR, theme)
+        if os.path.exists(user_path):
+            continue
+        if os.path.isdir(system_path):
+            print(f"📦 Copying {theme} to {USER_ICONS_DIR} for user modifications...")
+            try:
+                subprocess.run(["cp", "-ra", system_path, user_path], check=True)
+                print(f"✓ {theme} ready in {user_path}")
+            except Exception as e:
+                print(f"⚠️ Could not copy {theme}: {e}")
+
+def apply_color(color_name):
+    papirus_bin = os.path.expanduser("~/.local/bin/papirus-folders")
+    if not os.path.exists(papirus_bin):
+        papirus_bin = shutil.which("papirus-folders")
+
+    if not papirus_bin:
+        print("⚠️ 'papirus-folders' script not found. Skipping folder icon color.")
+        return
+
+    # Check cache to avoid re-applying identical color
+    cache_file = "/tmp/papirus_matugen_last_color"
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                if f.read().strip() == color_name:
+                    return
+        except Exception:
+            pass
+
+    print(f"📁 Changing Papirus folder color to '{color_name}'...")
+    for theme in THEMES:
+        user_path = os.path.join(USER_ICONS_DIR, theme)
+        if os.path.exists(user_path):
+            subprocess.run([papirus_bin, "-C", color_name, "-t", user_path, "-o"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif os.path.exists(os.path.join(SYSTEM_ICONS_DIR, theme)):
+            # Try global if user directory doesn't exist
+            subprocess.run([papirus_bin, "-C", color_name, "-t", theme, "-o"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    try:
+        with open(cache_file, "w") as f:
+            f.write(color_name)
+    except Exception:
+        pass
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1].startswith("#"):
+        hex_color = sys.argv[1]
+    else:
+        # Read from generated gtk-3.0/gtk.css or gtk-4.0/gtk.css
+        hex_color = "#3584e4"
+        css_path = os.path.expanduser("~/.config/gtk-4.0/gtk.css")
+        if not os.path.exists(css_path):
+            css_path = os.path.expanduser("~/.config/gtk-3.0/gtk.css")
+        if os.path.exists(css_path):
+            with open(css_path, "r") as f:
+                for line in f:
+                    if "@define-color accent_color" in line or "@define-color accent_bg_color" in line:
+                        parts = line.strip().split()
+                        if len(parts) >= 3 and parts[2].startswith("#"):
+                            hex_color = parts[2].rstrip(";")
+                            break
+
+    ensure_user_icons()
+    color_name = hex_to_papirus_color(hex_color)
+    apply_color(color_name)
+
+if __name__ == "__main__":
+    main()

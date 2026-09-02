@@ -1,58 +1,87 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+import sys
+import os
+import time
+import subprocess
 
 # ==============================================================================
 # gnome-matugen-daemon
-# Listens for wallpaper and color-scheme changes in GNOME and auto-applies themes
+# Native GNOME D-Bus / GSettings event listener
+# Reacts immediately to wallpaper and color-scheme changes with debounce
 # ==============================================================================
 
-APPLY_BIN="$(command -v gnome-matugen-apply || echo "$HOME/.local/bin/gnome-matugen-apply")"
+APPLY_BIN = os.path.expanduser("~/.local/bin/gnome-matugen-apply")
+if not os.path.exists(APPLY_BIN):
+    APPLY_BIN = "gnome-matugen-apply"
 
-if [[ ! -x "$APPLY_BIN" ]]; then
-  echo "❌ Error: 'gnome-matugen-apply' executable not found at $APPLY_BIN" >&2
-  exit 1
-fi
+last_trigger = 0.0
+DEBOUNCE_INTERVAL = 1.0  # seconds
 
-echo "🚀 GNOME Matugen Daemon started..."
-echo "👀 Monitoring wallpaper and color scheme changes..."
+def run_themer():
+    global last_trigger
+    now = time.time()
+    if now - last_trigger < DEBOUNCE_INTERVAL:
+        return
+    last_trigger = now
+    print("🔔 GNOME Settings Change detected! Re-generating theme...", flush=True)
+    time.sleep(0.3)  # Allow GNOME to finish writing settings
+    try:
+        subprocess.run([APPLY_BIN], check=False)
+    except Exception as e:
+        print(f"Error executing themer: {e}", file=sys.stderr, flush=True)
 
-# Initial application
-"$APPLY_BIN" || true
+def start_gio_listener():
+    try:
+        from gi.repository import Gio, GLib
+    except ImportError:
+        return False
 
-# Debounce loop
-LAST_RUN=0
-DEBOUNCE_SECONDS=1
+    print("🚀 Starting GNOME Matugen Daemon (GIO Native Event Listener)...", flush=True)
+    
+    # Run once at startup
+    run_themer()
 
-handle_change() {
-  local NOW
-  NOW=$(date +%s)
-  if (( NOW - LAST_RUN >= DEBOUNCE_SECONDS )); then
-    LAST_RUN=$NOW
-    echo "🔔 Change detected! Re-generating theme..."
-    sleep 0.5
-    "$APPLY_BIN" || true
-  fi
-}
+    # 1. Background settings
+    bg_schema = "org.gnome.desktop.background"
+    source = Gio.SettingsSchemaSource.get_default()
+    if source.lookup(bg_schema, True):
+        bg_settings = Gio.Settings.new(bg_schema)
+        bg_settings.connect("changed::picture-uri", lambda *args: run_themer())
+        bg_settings.connect("changed::picture-uri-dark", lambda *args: run_themer())
+    
+    # 2. Interface settings (Light / Dark mode, Accent color)
+    if_schema = "org.gnome.desktop.interface"
+    if source.lookup(if_schema, True):
+        if_settings = Gio.Settings.new(if_schema)
+        if_settings.connect("changed::color-scheme", lambda *args: run_themer())
+        if_settings.connect("changed::accent-color", lambda *args: run_themer())
 
-# Monitor gsettings changes concurrently
-gsettings monitor org.gnome.desktop.background picture-uri | while read -r _; do
-  handle_change
-done &
-BG_PID1=$!
+    loop = GLib.MainLoop()
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        pass
+    return True
 
-gsettings monitor org.gnome.desktop.background picture-uri-dark | while read -r _; do
-  handle_change
-done &
-BG_PID2=$!
+def start_bash_fallback():
+    print("⚠️ python-gi not found. Using unbuffered gsettings monitor fallback...", flush=True)
+    # Run once at startup
+    run_themer()
 
-gsettings monitor org.gnome.desktop.interface color-scheme | while read -r _; do
-  handle_change
-done &
-BG_PID3=$!
+    cmd = (
+        "stdbuf -oL gsettings monitor org.gnome.desktop.background picture-uri & "
+        "stdbuf -oL gsettings monitor org.gnome.desktop.background picture-uri-dark & "
+        "stdbuf -oL gsettings monitor org.gnome.desktop.interface color-scheme & "
+        "wait"
+    )
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, text=True, bufsize=1)
+    for line in iter(p.stdout.readline, ""):
+        if line.strip():
+            run_themer()
 
-cleanup() {
-  kill "$BG_PID1" "$BG_PID2" "$BG_PID3" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
+def main():
+    if not start_gio_listener():
+        start_bash_fallback()
 
-wait
+if __name__ == "__main__":
+    main()

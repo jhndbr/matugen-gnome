@@ -11,6 +11,7 @@ BIN_DIR="$HOME/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gnome-matugen"
 SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 THEMES_USER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/themes"
+ICONS_USER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
 
 echo "=========================================================="
 echo " 🎨  GNOME Matugen Material You - Installer for Debian 13"
@@ -30,14 +31,18 @@ if command -v apt-get >/dev/null 2>&1; then
     inotify-tools \
     libjxl-tools \
     imagemagick \
+    papirus-icon-theme \
+    python3-gi \
+    gir1.2-glib-2.0 \
     curl \
+    wget \
     tar \
     xz-utils
 else
-  echo "⚠️ apt-get not found. Please ensure sassc, gnome-shell-extensions, qt5ct, qt6ct, and inotify-tools are installed."
+  echo "⚠️ apt-get not found. Please ensure dependencies are installed manually."
 fi
 
-mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$THEMES_USER_DIR"
+mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$THEMES_USER_DIR" "$ICONS_USER_DIR"
 
 # 2. Install Matugen
 echo ""
@@ -78,35 +83,51 @@ else
   echo "✅ adw-gtk3 theme found."
 fi
 
-# 4. Copy Templates
+# 4. Install Papirus icon theme & papirus-folders
 echo ""
-echo "📁 Step 4: Installing Matugen templates..."
+echo "📁 Step 4: Checking Papirus icon theme and papirus-folders..."
+if [[ ! -d "/usr/share/icons/Papirus" && ! -d "$ICONS_USER_DIR/Papirus" ]]; then
+  echo "📥 Installing Papirus Icon Theme to $ICONS_USER_DIR..."
+  wget -qO- https://git.io/papirus-icon-theme-install | env DESTDIR="$ICONS_USER_DIR" sh || true
+fi
+
+if [[ ! -x "$BIN_DIR/papirus-folders" ]] && ! command -v papirus-folders >/dev/null 2>&1; then
+  echo "📥 Downloading papirus-folders helper..."
+  curl -sSLo "$BIN_DIR/papirus-folders" https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders || true
+  chmod +x "$BIN_DIR/papirus-folders" 2>/dev/null || true
+  echo "✅ papirus-folders installed to $BIN_DIR/papirus-folders"
+fi
+
+# 5. Copy Templates
+echo ""
+echo "📁 Step 5: Installing Matugen templates..."
 rm -rf "$CONFIG_DIR/templates"
 cp -r "$SCRIPT_DIR/templates" "$CONFIG_DIR/templates"
 echo "✅ Templates installed to $CONFIG_DIR/templates"
 
-# 5. Install Executables
+# 6. Install Executables
 echo ""
-echo "⚙️ Step 5: Installing executables..."
+echo "⚙️ Step 6: Installing executables..."
 cp "$SCRIPT_DIR/bin/gnome-matugen-apply" "$BIN_DIR/gnome-matugen-apply"
 cp "$SCRIPT_DIR/bin/gnome-matugen-daemon" "$BIN_DIR/gnome-matugen-daemon"
-chmod +x "$BIN_DIR/gnome-matugen-apply" "$BIN_DIR/gnome-matugen-daemon"
-echo "✅ Installed gnome-matugen-apply & gnome-matugen-daemon in $BIN_DIR"
+cp "$SCRIPT_DIR/bin/sync-papirus-folders" "$BIN_DIR/sync-papirus-folders"
+chmod +x "$BIN_DIR/gnome-matugen-apply" "$BIN_DIR/gnome-matugen-daemon" "$BIN_DIR/sync-papirus-folders"
+echo "✅ Installed binaries in $BIN_DIR"
 
-# 6. Enable GNOME User Theme Extension
+# 7. Enable GNOME User Theme Extension
 echo ""
-echo "🧩 Step 6: Enabling GNOME Shell User Themes extension..."
+echo "🧩 Step 7: Enabling GNOME Shell User Themes extension..."
 gnome-extensions enable user-theme@gnome-shell-extensions.gcampax.github.com 2>/dev/null || true
 
-# 7. Configure Systemd Service
+# 8. Configure Systemd Service
 echo ""
-echo "🔄 Step 7: Configuring Systemd user service..."
+echo "🔄 Step 8: Configuring Systemd user service..."
 cp "$SCRIPT_DIR/systemd/matugen-gnome.service" "$SYSTEMD_USER_DIR/matugen-gnome.service"
 systemctl --user daemon-reload
 systemctl --user enable --now matugen-gnome.service
 echo "✅ Systemd service enabled and started."
 
-# 8. Add ~/.local/bin to PATH in bashrc if needed
+# 9. Add ~/.local/bin to PATH in bashrc if needed
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   if ! grep -q 'PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
@@ -114,9 +135,9 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   fi
 fi
 
-# 9. Apply theme for the first time
+# 10. Apply theme for the first time
 echo ""
-echo "✨ Step 8: Generating initial theme..."
+echo "✨ Step 9: Generating initial theme..."
 export PATH="$BIN_DIR:$PATH"
 "$BIN_DIR/gnome-matugen-apply" || true
 
