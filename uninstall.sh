@@ -26,7 +26,6 @@ systemctl --user daemon-reload || true
 echo "🔄 Resetting GNOME theme settings..."
 gsettings set org.gnome.shell.extensions.user-theme name '' 2>/dev/null || true
 gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita' 2>/dev/null || true
-gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null || true
 
 # 3. Clean CSS files generated
 rm -f "$HOME/.config/gtk-3.0/gtk.css"
@@ -35,7 +34,5 @@ rm -rf "$THEME_DIR"
 rm -rf "$CONFIG_DIR"
 rm -f "$BIN_DIR/gnome-matugen-apply"
 rm -f "$BIN_DIR/gnome-matugen-daemon"
-rm -f "$BIN_DIR/sync-papirus-folders"
-rm -f "/tmp/papirus_matugen_last_color"
 
 echo "✅ Uninstallation complete."

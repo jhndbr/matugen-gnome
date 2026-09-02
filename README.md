@@ -1,18 +1,17 @@
 # GNOME Matugen Material You Themer 🎨
 
-Automatic, dynamic Material You (Material Design 3) theme generator and applier for **GNOME Shell**, **GTK 4 / Libadwaita**, **GTK 3 (adw-gtk3)**, **Papirus Folder Icons**, and **Qt 5 / Qt 6** on **Debian 13 (Trixie)** and modern Linux distributions.
+Automatic, dynamic Material You (Material Design 3) theme generator and applier for **GNOME Shell**, **GTK 4 / Libadwaita**, **GTK 3 (adw-gtk3)**, and **Qt 5 / Qt 6** on **Debian 13 (Trixie)** and modern Linux distributions.
 
 ---
 
 ## ✨ Features
 
-- 🖼️ **Dynamic Wallpaper Theming**: Automatically extracts color palettes from your active GNOME wallpaper (including JPEG XL `.jxl`) using [Matugen](https://github.com/InioX/matugen).
+- 🖼️ **Dynamic Wallpaper Theming**: Automatically extracts dominant color palettes from your active GNOME wallpaper (including JPEG XL `.jxl`) using [Matugen](https://github.com/InioX/matugen) and Google Material Design 3 algorithms.
 - 🌓 **Instant Light / Dark Mode Sync**: Reacts immediately when toggling GNOME's Dark/Light mode using native GNOME GSettings/GIO event listeners.
-- 📁 **Adaptive Papirus Folder Icons**: Dynamically adjusts Papirus folder icon colors to match your Material You accent palette.
 - 🐚 **Full GNOME Shell Theming**: Dynamically re-compiles the GNOME Shell stylesheet (`Material-You`) with `sassc` and applies it in real-time without restarting GNOME.
-- 🪟 **Unified GTK 3 & GTK 4**: Themes Libadwaita (GTK4) and legacy GTK3 applications (via `adw-gtk3`) with identical colors.
+- 🪟 **Unified GTK 3 & GTK 4**: Themes Libadwaita (GTK4) and legacy GTK3 applications (via `adw-gtk3`) with matching colors.
 - ⚙️ **Qt Support**: Generates color schemes for `qt5ct` and `qt6ct`.
-- 🔄 **Native Background Daemon**: Runs as a lightweight Systemd user service monitoring `gsettings` changes via GIO with zero CPU overhead and instant response.
+- 🔄 **Native Background Daemon**: Runs as an asynchronous, lightweight Systemd user service monitoring `gsettings` changes via GIO with zero CPU overhead and instant response.
 
 ---
 
@@ -24,7 +23,6 @@ The installer automatically installs and configures:
 - `gnome-shell-extensions` (specifically `user-theme`)
 - `gnome-tweaks`
 - `qt5ct` & `qt6ct`
-- `papirus-icon-theme` & `papirus-folders`
 - `libjxl-tools` & `imagemagick` (for `.jxl` wallpapers)
 - `python3-gi` (for native GSettings events)
 - [Matugen](https://github.com/InioX/matugen) (Auto-downloaded if not present)
@@ -47,13 +45,12 @@ The installer automatically installs and configures:
    ```
 
 3. **That's it!** The installer will:
-   - Install required packages.
-   - Install Papirus icon theme & `papirus-folders`.
+   - Install required system packages.
    - Set up templates in `~/.config/gnome-matugen/templates`.
    - Install the helper binaries in `~/.local/bin/`.
    - Enable the `user-theme` GNOME extension.
    - Start the background auto-theming service (`matugen-gnome.service`).
-   - Apply the theme and sync folder icons immediately.
+   - Apply the theme immediately.
 
 ---
 
@@ -62,7 +59,7 @@ The installer automatically installs and configures:
 You can trigger or customize the theme anytime from your terminal:
 
 ```bash
-# Apply theme using current GNOME wallpaper & sync Papirus icons
+# Apply theme using current GNOME wallpaper
 gnome-matugen-apply
 
 # Apply theme with a specific image
@@ -118,8 +115,7 @@ To cleanly remove the theme, service, and configuration:
 matugen-gnome-themer/
 ├── bin/
 │   ├── gnome-matugen-apply      # Theme generator and applier
-│   ├── gnome-matugen-daemon     # Native GIO background event listener
-│   └── sync-papirus-folders     # Dynamic Papirus icon folder color adapter
+│   └── gnome-matugen-daemon     # Native GIO background event listener
 ├── systemd/
 │   └── matugen-gnome.service    # Systemd user unit
 ├── templates/
@@ -140,5 +136,4 @@ matugen-gnome-themer/
 
 - [Matugen](https://github.com/InioX/matugen) by InioX
 - [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) by lassekongo83
-- [Papirus Development Team](https://github.com/PapirusDevelopmentTeam)
 - [GNOME Shell Sass](https://gitlab.gnome.org/GNOME/gnome-shell)

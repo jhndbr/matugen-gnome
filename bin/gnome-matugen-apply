@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ==============================================================================
 # gnome-matugen-apply
-# Generates and applies Material You color schemes to GNOME (GTK 3/4, Shell & Icons)
+# Generates and applies Material You color schemes to GNOME (GTK 3/4 & Shell)
 # ==============================================================================
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -21,9 +21,7 @@ Options:
   --color <#hex>       Hex color value (e.g., "#3b82f6")
   --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
   --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
-  --prefer <pref>      Matugen 4+ preference (closest_to_fallback, saturation, darkness, lightness)
   --contrast <float>   Contrast value between -1.0 and 1.0 (Default: 0.0)
-  --no-icons           Skip Papirus folder icons color synchronization
   -h, --help           Show this help message
 
 Examples:
@@ -63,9 +61,7 @@ IMAGE_PATH=""
 COLOR_HEX=""
 MODE=""
 SCHEME_TYPE="scheme-tonal-spot"
-PREFER="saturation"
 CONTRAST=""
-SYNC_ICONS=true
 EXPLICIT_MODE=false
 
 while [[ $# -gt 0 ]]; do
@@ -87,18 +83,9 @@ while [[ $# -gt 0 ]]; do
       SCHEME_TYPE="${2:-}"
       shift 2
       ;;
-    --prefer)
-      PREFER="${2:-}"
-      PREFER="${PREFER//_/-}"
-      shift 2
-      ;;
     --contrast)
       CONTRAST="${2:-}"
       shift 2
-      ;;
-    --no-icons)
-      SYNC_ICONS=false
-      shift
       ;;
     -h|--help)
       usage
@@ -292,29 +279,6 @@ if gnome-extensions list 2>/dev/null | grep -q 'user-theme'; then
   gsettings set org.gnome.shell.extensions.user-theme name '' || true
   sleep 0.1
   gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' || true
-fi
-
-# ------------------------------------------------------------------------------
-# Synchronize Papirus Folder Icons
-# ------------------------------------------------------------------------------
-if [[ "$SYNC_ICONS" == "true" ]]; then
-  SYNC_ICONS_BIN="$(dirname "$0")/sync-papirus-folders"
-  if [[ ! -x "$SYNC_ICONS_BIN" ]]; then
-    SYNC_ICONS_BIN="$HOME/.local/bin/sync-papirus-folders"
-  fi
-
-  if [[ -x "$SYNC_ICONS_BIN" ]]; then
-    ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-4.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
-    if [[ -z "$ACCENT_HEX" && -f "$CONFIG_DIR/gtk-3.0/gtk.css" ]]; then
-      ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-3.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
-    fi
-
-    if [[ -n "$ACCENT_HEX" ]]; then
-      "$SYNC_ICONS_BIN" --mode "$MODE" "$ACCENT_HEX" || true
-    else
-      "$SYNC_ICONS_BIN" --mode "$MODE" || true
-    fi
-  fi
 fi
 
 echo "✅ Theme applied successfully!"
