@@ -302,7 +302,16 @@ if [[ "$SYNC_ICONS" == "true" ]]; then
   fi
 
   if [[ -x "$SYNC_ICONS_BIN" ]]; then
-    "$SYNC_ICONS_BIN" --mode "$MODE" || true
+    ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-4.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
+    if [[ -z "$ACCENT_HEX" && -f "$CONFIG_DIR/gtk-3.0/gtk.css" ]]; then
+      ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-3.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
+    fi
+
+    if [[ -n "$ACCENT_HEX" ]]; then
+      "$SYNC_ICONS_BIN" --mode "$MODE" "$ACCENT_HEX" || true
+    else
+      "$SYNC_ICONS_BIN" --mode "$MODE" || true
+    fi
   fi
 fi
 

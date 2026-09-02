@@ -74,7 +74,7 @@ def ensure_user_icons():
             except Exception as e:
                 print(f"⚠️ Could not copy {theme}: {e}")
 
-def apply_color(color_name, mode="dark"):
+def apply_color(color_name, mode="dark", hex_color=""):
     papirus_bin = os.path.expanduser("~/.local/bin/papirus-folders")
     if not os.path.exists(papirus_bin):
         papirus_bin = shutil.which("papirus-folders")
@@ -83,7 +83,7 @@ def apply_color(color_name, mode="dark"):
         print("⚠️ 'papirus-folders' script not found. Skipping folder icon color.")
         return
 
-    print(f"📁 Changing Papirus folder color to '{color_name}'...")
+    print(f"📁 Changing Papirus folder color to '{color_name}' (Accent: {hex_color})...")
     for theme in THEMES:
         user_path = os.path.join(USER_ICONS_DIR, theme)
         if os.path.exists(user_path):
@@ -147,7 +147,7 @@ def main():
 
     ensure_user_icons()
     color_name = hex_to_papirus_color(hex_color)
-    apply_color(color_name, mode=mode)
+    apply_color(color_name, mode=mode, hex_color=hex_color)
 
 if __name__ == "__main__":
     main()
