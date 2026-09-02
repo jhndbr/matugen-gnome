@@ -282,6 +282,9 @@ if [[ "$EXPLICIT_MODE" == "true" ]]; then
   fi
 fi
 
+# Force GTK stylesheet reload
+gsettings set org.gnome.desktop.interface gtk-theme '' || true
+sleep 0.1
 if [[ "$MODE" == "dark" ]]; then
   gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' || true
 else
@@ -291,6 +294,7 @@ fi
 # Reload Shell Theme via user-theme extension
 if gnome-extensions list 2>/dev/null | grep -q 'user-theme'; then
   gsettings set org.gnome.shell.extensions.user-theme name '' || true
+  sleep 0.1
   gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' || true
 fi
 

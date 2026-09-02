@@ -4,77 +4,92 @@ import os
 import time
 import subprocess
 import threading
+from queue import Queue, Empty
 
 # ==============================================================================
 # gnome-matugen-daemon
-# Native GNOME D-Bus / GSettings event listener
-# Reacts immediately to wallpaper and color-scheme changes with debounce & lock
+# Native GNOME GSettings event listener with asynchronous worker queue
 # ==============================================================================
 
 APPLY_BIN = os.path.expanduser("~/.local/bin/gnome-matugen-apply")
 if not os.path.exists(APPLY_BIN):
     APPLY_BIN = "gnome-matugen-apply"
 
-last_trigger = 0.0
-DEBOUNCE_INTERVAL = 1.0  # seconds
-is_running = False
-lock = threading.Lock()
+event_queue = Queue()
+# Keep strong references to Gio.Settings objects to prevent garbage collection
+GSETTINGS_HOLDERS = []
 
-def run_themer():
-    global last_trigger, is_running
-    with lock:
-        now = time.time()
-        if is_running or (now - last_trigger < DEBOUNCE_INTERVAL):
-            return
-        is_running = True
-        last_trigger = now
+def worker():
+    while True:
+        try:
+            # Wait for an event
+            event = event_queue.get()
+            # Drain any duplicate events in queue (debounce)
+            time.sleep(0.5)
+            while not event_queue.empty():
+                try:
+                    event_queue.get_nowait()
+                    event_queue.task_done()
+                except Empty:
+                    break
+            
+            print("🔔 Triggering theme update...", flush=True)
+            subprocess.run([APPLY_BIN], check=False)
+            event_queue.task_done()
+        except Exception as e:
+            print(f"⚠️ Worker error: {e}", file=sys.stderr, flush=True)
 
-    print("🔔 GNOME Settings Change detected! Re-generating theme...", flush=True)
-    time.sleep(0.3)  # Allow GNOME to finish writing settings
+def on_setting_changed(settings, key):
+    print(f"📡 Setting changed: {settings.get_property('schema-id')}.{key}", flush=True)
+    event_queue.put(key)
+
+def start_gio_daemon():
     try:
-        subprocess.run([APPLY_BIN], check=False)
-    except Exception as e:
-        print(f"Error executing themer: {e}", file=sys.stderr, flush=True)
-    finally:
-        with lock:
-            is_running = False
-
-def start_gio_listener():
-    try:
+        import gi
+        gi.require_version('Gio', '2.0')
+        gi.require_version('GLib', '2.0')
         from gi.repository import Gio, GLib
-    except ImportError:
+    except Exception as e:
+        print(f"⚠️ GIO library not available: {e}", file=sys.stderr, flush=True)
         return False
 
-    print("🚀 Starting GNOME Matugen Daemon (GIO Native Event Listener)...", flush=True)
-    
-    # Run once at startup
-    run_themer()
+    print("🚀 Starting GNOME Matugen Daemon (GIO Event Bus)...", flush=True)
 
-    # 1. Background settings
+    # Start background worker thread
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    # Initial trigger
+    event_queue.put("initial")
+
+    # 1. Background schema
     bg_schema = "org.gnome.desktop.background"
     source = Gio.SettingsSchemaSource.get_default()
-    if source.lookup(bg_schema, True):
+    if source and source.lookup(bg_schema, True):
         bg_settings = Gio.Settings.new(bg_schema)
-        bg_settings.connect("changed::picture-uri", lambda *args: run_themer())
-        bg_settings.connect("changed::picture-uri-dark", lambda *args: run_themer())
-    
-    # 2. Interface settings (Light / Dark mode, Accent color)
+        bg_settings.connect("changed::picture-uri", on_setting_changed)
+        bg_settings.connect("changed::picture-uri-dark", on_setting_changed)
+        GSETTINGS_HOLDERS.append(bg_settings)
+
+    # 2. Interface schema (Dark/Light mode switch)
     if_schema = "org.gnome.desktop.interface"
-    if source.lookup(if_schema, True):
+    if source and source.lookup(if_schema, True):
         if_settings = Gio.Settings.new(if_schema)
-        if_settings.connect("changed::color-scheme", lambda *args: run_themer())
-        if_settings.connect("changed::accent-color", lambda *args: run_themer())
+        if_settings.connect("changed::color-scheme", on_setting_changed)
+        GSETTINGS_HOLDERS.append(if_settings)
 
     loop = GLib.MainLoop()
     try:
         loop.run()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
     return True
 
 def start_bash_fallback():
-    print("⚠️ python-gi not found. Using unbuffered gsettings monitor fallback...", flush=True)
-    run_themer()
+    print("⚠️ Using unbuffered stdbuf monitor fallback...", flush=True)
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    event_queue.put("initial")
 
     cmd = (
         "stdbuf -oL gsettings monitor org.gnome.desktop.background picture-uri & "
@@ -85,10 +100,10 @@ def start_bash_fallback():
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, text=True, bufsize=1)
     for line in iter(p.stdout.readline, ""):
         if line.strip():
-            run_themer()
+            event_queue.put("bash_event")
 
 def main():
-    if not start_gio_listener():
+    if not start_gio_daemon():
         start_bash_fallback()
 
 if __name__ == "__main__":
