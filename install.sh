@@ -100,6 +100,10 @@ if [[ ! -d "$ICONS_USER_DIR/Papirus" ]]; then
   wget -qO- https://git.io/papirus-icon-theme-install | env DESTDIR="$ICONS_USER_DIR" sh || true
 fi
 
+if [[ -d "$ICONS_USER_DIR/Papirus" ]]; then
+  chmod -R u+w "$ICONS_USER_DIR/Papirus"* 2>/dev/null || true
+fi
+
 if [[ ! -x "$BIN_DIR/papirus-folders" ]] && ! command -v papirus-folders >/dev/null 2>&1; then
   echo "📥 Downloading papirus-folders helper..."
   curl -sSLo "$BIN_DIR/papirus-folders" https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders || true
