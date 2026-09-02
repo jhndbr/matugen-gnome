@@ -99,7 +99,30 @@ echo "✅ Installed binaries in $BIN_DIR"
 # 6. Enable GNOME User Theme Extension
 echo ""
 echo "🧩 Step 6: Enabling GNOME Shell User Themes extension..."
+
+# Enable user extensions globally in GNOME
+gsettings set org.gnome.shell disable-user-extensions false 2>/dev/null || true
+
+# Add user-theme to enabled-extensions directly in dconf
+python3 -c "
+try:
+    import gi
+    from gi.repository import Gio
+    s = Gio.Settings.new('org.gnome.shell')
+    s.set_boolean('disable-user-extensions', False)
+    current = list(s.get_strv('enabled-extensions'))
+    ext = 'user-theme@gnome-shell-extensions.gcampax.github.com'
+    if ext not in current:
+        current.append(ext)
+        s.set_strv('enabled-extensions', current)
+except Exception:
+    pass
+" 2>/dev/null || true
+
+# Enable via CLI & D-Bus call
 gnome-extensions enable user-theme@gnome-shell-extensions.gcampax.github.com 2>/dev/null || true
+busctl --user call org.gnome.Shell.Extensions /org/gnome/Shell/Extensions org.gnome.Shell.Extensions EnableExtension s "user-theme@gnome-shell-extensions.gcampax.github.com" 2>/dev/null || true
+echo "✅ user-theme extension enabled automatically."
 
 # 7. Configure Systemd Service
 echo ""

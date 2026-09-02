@@ -275,10 +275,8 @@ else
 fi
 
 # Reload Shell Theme via user-theme extension
-if gnome-extensions list 2>/dev/null | grep -q 'user-theme'; then
-  gsettings set org.gnome.shell.extensions.user-theme name '' || true
-  sleep 0.1
-  gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' || true
-fi
+gsettings set org.gnome.shell.extensions.user-theme name '' 2>/dev/null || true
+sleep 0.1
+gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' 2>/dev/null || true
 
 echo "✅ Theme applied successfully!"
