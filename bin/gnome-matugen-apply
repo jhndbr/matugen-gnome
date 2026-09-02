@@ -63,7 +63,7 @@ IMAGE_PATH=""
 COLOR_HEX=""
 MODE=""
 SCHEME_TYPE="scheme-tonal-spot"
-PREFER="closest_to_fallback"
+PREFER="closest-to-fallback"
 CONTRAST=""
 SYNC_ICONS=true
 EXPLICIT_MODE=false
@@ -89,6 +89,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --prefer)
       PREFER="${2:-}"
+      PREFER="${PREFER//_/-}"
       shift 2
       ;;
     --contrast)
