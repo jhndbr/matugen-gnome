@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# gnome-matugen-daemon
+# Listens for wallpaper and color-scheme changes in GNOME and auto-applies themes
+# ==============================================================================
+
+APPLY_BIN="$(command -v gnome-matugen-apply || echo "$HOME/.local/bin/gnome-matugen-apply")"
+
+if [[ ! -x "$APPLY_BIN" ]]; then
+  echo "❌ Error: 'gnome-matugen-apply' executable not found at $APPLY_BIN" >&2
+  exit 1
+fi
+
+echo "🚀 GNOME Matugen Daemon started..."
+echo "👀 Monitoring wallpaper and color scheme changes..."
+
+# Initial application
+"$APPLY_BIN" || true
+
+# Debounce loop
+LAST_RUN=0
+DEBOUNCE_SECONDS=1
+
+handle_change() {
+  local NOW
+  NOW=$(date +%s)
+  if (( NOW - LAST_RUN >= DEBOUNCE_SECONDS )); then
+    LAST_RUN=$NOW
+    echo "🔔 Change detected! Re-generating theme..."
+    sleep 0.5
+    "$APPLY_BIN" || true
+  fi
+}
+
+# Monitor gsettings changes concurrently
+gsettings monitor org.gnome.desktop.background picture-uri | while read -r _; do
+  handle_change
+done &
+BG_PID1=$!
+
+gsettings monitor org.gnome.desktop.background picture-uri-dark | while read -r _; do
+  handle_change
+done &
+BG_PID2=$!
+
+gsettings monitor org.gnome.desktop.interface color-scheme | while read -r _; do
+  handle_change
+done &
+BG_PID3=$!
+
+cleanup() {
+  kill "$BG_PID1" "$BG_PID2" "$BG_PID3" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+wait

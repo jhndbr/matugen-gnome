@@ -1,0 +1,13 @@
+[Unit]
+Description=GNOME Matugen Material You Auto Themer
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/gnome-matugen-daemon
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# gnome-matugen-apply
+# Generates and applies Material You color schemes to GNOME (GTK 3/4 & Shell)
+# ==============================================================================
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
+TEMPLATES_DIR="$CONFIG_DIR/gnome-matugen/templates"
+THEME_DIR="$DATA_DIR/themes/Material-You/gnome-shell"
+
+usage() {
+  cat << 'EOF'
+Usage:
+  gnome-matugen-apply [OPTIONS]
+
+Options:
+  --image <path>       Path to wallpaper/image (Default: auto-detect from GNOME)
+  --color <#hex>       Hex color value (e.g., "#3b82f6")
+  --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
+  --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
+  --contrast <float>   Contrast value between -1.0 and 1.0 (Default: 0.0)
+  -h, --help           Show this help message
+
+Examples:
+  gnome-matugen-apply
+  gnome-matugen-apply --image ~/Pictures/wall.png --mode dark
+  gnome-matugen-apply --color "#7c3aed"
+EOF
+}
+
+# Find matugen binary
+find_matugen() {
+  if command -v matugen >/dev/null 2>&1; then
+    command -v matugen
+  elif [[ -x "$HOME/.local/bin/matugen" ]]; then
+    echo "$HOME/.local/bin/matugen"
+  elif [[ -x "/usr/local/bin/matugen" ]]; then
+    echo "/usr/local/bin/matugen"
+  elif [[ -x "$HOME/.cargo/bin/matugen" ]]; then
+    echo "$HOME/.cargo/bin/matugen"
+  else
+    echo ""
+  fi
+}
+
+MATUGEN_BIN="$(find_matugen)"
+if [[ -z "$MATUGEN_BIN" ]]; then
+  echo "❌ Error: 'matugen' binary not found. Please run install.sh or install matugen." >&2
+  exit 1
+fi
+
+if ! command -v sassc >/dev/null 2>&1; then
+  echo "❌ Error: 'sassc' is not installed. Please install it using: sudo apt install sassc" >&2
+  exit 1
+fi
+
+IMAGE_PATH=""
+COLOR_HEX=""
+MODE=""
+SCHEME_TYPE="scheme-tonal-spot"
+CONTRAST=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --image)
+      IMAGE_PATH="${2:-}"
+      shift 2
+      ;;
+    --color)
+      COLOR_HEX="${2:-}"
+      shift 2
+      ;;
+    --mode)
+      MODE="${2:-}"
+      shift 2
+      ;;
+    --type)
+      SCHEME_TYPE="${2:-}"
+      shift 2
+      ;;
+    --contrast)
+      CONTRAST="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+# Detect current mode if not specified
+if [[ -z "$MODE" ]]; then
+  CURRENT_SCHEME="$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "'default'")"
+  CURRENT_SCHEME="${CURRENT_SCHEME//\'/}"
+  if [[ "$CURRENT_SCHEME" == "prefer-light" || "$CURRENT_SCHEME" == "default" ]]; then
+    MODE="light"
+  else
+    MODE="dark"
+  fi
+fi
+
+# Detect current wallpaper if neither image nor color is specified
+if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
+  if [[ "$MODE" == "dark" ]]; then
+    URI="$(gsettings get org.gnome.desktop.background picture-uri-dark 2>/dev/null || echo "")"
+  else
+    URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
+  fi
+  URI="${URI//\'/}"
+  
+  if [[ -z "$URI" || "$URI" == "''" ]]; then
+    URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
+    URI="${URI//\'/}"
+  fi
+
+  if [[ "$URI" =~ ^file:// ]]; then
+    IMAGE_PATH="${URI#file://}"
+    # Decode URL-encoded spaces / characters if needed
+    IMAGE_PATH="$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$IMAGE_PATH" 2>/dev/null || echo "$IMAGE_PATH")"
+  else
+    IMAGE_PATH="$URI"
+  fi
+fi
+
+if [[ -n "$IMAGE_PATH" && ! -f "$IMAGE_PATH" ]]; then
+  echo "⚠️ Warning: Wallpaper '$IMAGE_PATH' not found." >&2
+  # Fallback to default GNOME picture-uri
+  URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
+  URI="${URI//\'/}"
+  IMAGE_PATH="${URI#file://}"
+fi
+
+if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
+  echo "❌ Error: Could not determine an image or color source." >&2
+  exit 1
+fi
+
+echo "🎨 Applying theme: Mode=$MODE | Scheme=$SCHEME_TYPE"
+if [[ -n "$IMAGE_PATH" ]]; then
+  echo "🖼️  Source Image: $IMAGE_PATH"
+else
+  echo "🎯 Source Color: $COLOR_HEX"
+fi
+
+# Ensure output directories exist
+mkdir -p "$CONFIG_DIR/gtk-3.0" "$CONFIG_DIR/gtk-4.0" "$CONFIG_DIR/qt5ct/colors" "$CONFIG_DIR/qt6ct/colors" "$THEME_DIR"
+
+# Create a temporary config for matugen
+TMP_CFG="$(mktemp --suffix=.toml)"
+cleanup() {
+  rm -f "$TMP_CFG"
+}
+trap cleanup EXIT
+
+cat > "$TMP_CFG" << EOF
+[config]
+
+[templates.gtk3]
+input_path = '$TEMPLATES_DIR/gtk.css'
+output_path = '$CONFIG_DIR/gtk-3.0/gtk.css'
+
+[templates.gtk4]
+input_path = '$TEMPLATES_DIR/gtk.css'
+output_path = '$CONFIG_DIR/gtk-4.0/gtk.css'
+
+[templates.gnomeshell]
+input_path = '$TEMPLATES_DIR/gnome-shell-colors.scss'
+output_path = '$TEMPLATES_DIR/gnome-shell-sass/_colors.scss'
+
+[templates.qt5]
+input_path = '$TEMPLATES_DIR/qtct.conf'
+output_path = '$CONFIG_DIR/qt5ct/colors/MaterialYou.conf'
+
+[templates.qt6]
+input_path = '$TEMPLATES_DIR/qtct.conf'
+output_path = '$CONFIG_DIR/qt6ct/colors/MaterialYou.conf'
+EOF
+
+# Build matugen command args
+MATUGEN_ARGS=()
+if [[ -n "$IMAGE_PATH" ]]; then
+  MATUGEN_ARGS+=(image "$IMAGE_PATH")
+else
+  MATUGEN_ARGS+=(color hex "$COLOR_HEX")
+fi
+
+MATUGEN_ARGS+=(-m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG")
+if [[ -n "$CONTRAST" ]]; then
+  MATUGEN_ARGS+=(--contrast "$CONTRAST")
+fi
+
+# Run Matugen
+"$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"
+
+# Compile GNOME Shell CSS
+echo "⚙️ Compiling GNOME Shell stylesheet..."
+sassc "$TEMPLATES_DIR/gnome-shell.scss" "$THEME_DIR/gnome-shell.css"
+
+# Apply GNOME settings
+echo "✨ Updating GNOME Desktop settings..."
+if [[ "$MODE" == "dark" ]]; then
+  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' || true
+  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' || true
+else
+  gsettings set org.gnome.desktop.interface color-scheme 'prefer-light' || true
+  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' || true
+fi
+
+# Reload Shell Theme via user-theme extension
+if gnome-extensions list 2>/dev/null | grep -q 'user-theme'; then
+  gsettings set org.gnome.shell.extensions.user-theme name '' || true
+  gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' || true
+fi
+
+echo "✅ Theme applied successfully!"
