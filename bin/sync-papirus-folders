@@ -113,6 +113,8 @@ def apply_color(color_name, mode="dark", hex_color=""):
         time.sleep(0.1)
         subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", target_icon_theme],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Notify nautilus to refresh view
+        subprocess.run(["pkill", "-HUP", "nautilus"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 

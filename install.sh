@@ -86,7 +86,15 @@ fi
 # 4. Install Papirus icon theme & papirus-folders
 echo ""
 echo "📁 Step 4: Checking Papirus icon theme and papirus-folders..."
-if [[ ! -d "/usr/share/icons/Papirus" && ! -d "$ICONS_USER_DIR/Papirus" ]]; then
+mkdir -p "$ICONS_USER_DIR"
+for theme in Papirus Papirus-Dark Papirus-Light; do
+  if [[ -d "/usr/share/icons/$theme" && ! -d "$ICONS_USER_DIR/$theme" ]]; then
+    echo "📦 Copying $theme to $ICONS_USER_DIR..."
+    cp -ra "/usr/share/icons/$theme" "$ICONS_USER_DIR/" 2>/dev/null || true
+  fi
+done
+
+if [[ ! -d "$ICONS_USER_DIR/Papirus" && ! -d "/usr/share/icons/Papirus" ]]; then
   echo "📥 Installing Papirus Icon Theme to $ICONS_USER_DIR..."
   wget -qO- https://git.io/papirus-icon-theme-install | env DESTDIR="$ICONS_USER_DIR" sh || true
 fi

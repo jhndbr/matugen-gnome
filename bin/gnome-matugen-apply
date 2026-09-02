@@ -125,16 +125,17 @@ fi
 
 # Detect current wallpaper if neither image nor color is specified
 if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
-  if [[ "$MODE" == "dark" ]]; then
-    URI="$(gsettings get org.gnome.desktop.background picture-uri-dark 2>/dev/null || echo "")"
-  else
-    URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
+  URI_DARK="$(gsettings get org.gnome.desktop.background picture-uri-dark 2>/dev/null || echo "")"
+  URI_LIGHT="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
+  URI_DARK="${URI_DARK//\'/}"
+  URI_LIGHT="${URI_LIGHT//\'/}"
+
+  URI="$URI_LIGHT"
+  if [[ "$MODE" == "dark" && -n "$URI_DARK" && "$URI_DARK" != "''" ]]; then
+    URI="$URI_DARK"
   fi
-  URI="${URI//\'/}"
-  
   if [[ -z "$URI" || "$URI" == "''" ]]; then
-    URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
-    URI="${URI//\'/}"
+    URI="$URI_LIGHT"
   fi
 
   if [[ "$URI" =~ ^file:// ]]; then
@@ -247,12 +248,7 @@ EOF
 # Build matugen command args
 MATUGEN_ARGS=()
 if [[ -n "$IMAGE_PATH" ]]; then
-  MATUGEN_ARGS+=(image "$IMAGE_PATH")
-  if [[ "$PREFER" == "closest-to-fallback" ]]; then
-    MATUGEN_ARGS+=(--prefer "$PREFER" --fallback-color "#3584e4")
-  elif [[ -n "$PREFER" ]]; then
-    MATUGEN_ARGS+=(--prefer "$PREFER")
-  fi
+  MATUGEN_ARGS+=(image "$IMAGE_PATH" --source-color-index 0)
 else
   MATUGEN_ARGS+=(color hex "$COLOR_HEX")
 fi
