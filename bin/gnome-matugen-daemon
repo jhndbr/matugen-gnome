@@ -3,11 +3,12 @@ import sys
 import os
 import time
 import subprocess
+import threading
 
 # ==============================================================================
 # gnome-matugen-daemon
 # Native GNOME D-Bus / GSettings event listener
-# Reacts immediately to wallpaper and color-scheme changes with debounce
+# Reacts immediately to wallpaper and color-scheme changes with debounce & lock
 # ==============================================================================
 
 APPLY_BIN = os.path.expanduser("~/.local/bin/gnome-matugen-apply")
@@ -16,19 +17,27 @@ if not os.path.exists(APPLY_BIN):
 
 last_trigger = 0.0
 DEBOUNCE_INTERVAL = 1.0  # seconds
+is_running = False
+lock = threading.Lock()
 
 def run_themer():
-    global last_trigger
-    now = time.time()
-    if now - last_trigger < DEBOUNCE_INTERVAL:
-        return
-    last_trigger = now
+    global last_trigger, is_running
+    with lock:
+        now = time.time()
+        if is_running or (now - last_trigger < DEBOUNCE_INTERVAL):
+            return
+        is_running = True
+        last_trigger = now
+
     print("🔔 GNOME Settings Change detected! Re-generating theme...", flush=True)
     time.sleep(0.3)  # Allow GNOME to finish writing settings
     try:
         subprocess.run([APPLY_BIN], check=False)
     except Exception as e:
         print(f"Error executing themer: {e}", file=sys.stderr, flush=True)
+    finally:
+        with lock:
+            is_running = False
 
 def start_gio_listener():
     try:
@@ -65,7 +74,6 @@ def start_gio_listener():
 
 def start_bash_fallback():
     print("⚠️ python-gi not found. Using unbuffered gsettings monitor fallback...", flush=True)
-    # Run once at startup
     run_themer()
 
     cmd = (

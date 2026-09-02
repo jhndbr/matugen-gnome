@@ -4,6 +4,7 @@ import sys
 import colorsys
 import subprocess
 import shutil
+import time
 
 # ==============================================================================
 # sync-papirus-folders
@@ -14,26 +15,6 @@ import shutil
 SYSTEM_ICONS_DIR = "/usr/share/icons"
 USER_ICONS_DIR = os.path.expanduser("~/.local/share/icons")
 THEMES = ["Papirus", "Papirus-Dark", "Papirus-Light"]
-
-# Standard Papirus folder colors and their representative RGB / Hue
-PAPIRUS_COLORS = {
-    "blue": (0.60, 0.70, 0.90),      # ~216 deg
-    "bluegrey": (0.58, 0.25, 0.60),
-    "brown": (0.07, 0.55, 0.50),
-    "cyan": (0.52, 0.80, 0.85),      # ~187 deg
-    "green": (0.33, 0.70, 0.75),     # ~120 deg
-    "grey": (0.0, 0.05, 0.60),
-    "indigo": (0.68, 0.65, 0.70),    # ~245 deg
-    "magenta": (0.83, 0.70, 0.80),   # ~300 deg
-    "orange": (0.08, 0.85, 0.95),    # ~30 deg
-    "pink": (0.95, 0.60, 0.90),      # ~340 deg
-    "red": (0.01, 0.85, 0.85),       # ~3 deg
-    "teal": (0.47, 0.75, 0.75),      # ~170 deg
-    "violet": (0.75, 0.65, 0.80),    # ~270 deg
-    "yellow": (0.13, 0.85, 0.95),    # ~48 deg
-    "deeporange": (0.05, 0.90, 0.90),
-    "black": (0.0, 0.0, 0.20),
-}
 
 def hex_to_papirus_color(hex_str):
     hex_str = hex_str.lstrip("#")
@@ -93,7 +74,7 @@ def ensure_user_icons():
             except Exception as e:
                 print(f"⚠️ Could not copy {theme}: {e}")
 
-def apply_color(color_name):
+def apply_color(color_name, mode="dark"):
     papirus_bin = os.path.expanduser("~/.local/bin/papirus-folders")
     if not os.path.exists(papirus_bin):
         papirus_bin = shutil.which("papirus-folders")
@@ -102,39 +83,56 @@ def apply_color(color_name):
         print("⚠️ 'papirus-folders' script not found. Skipping folder icon color.")
         return
 
-    # Check cache to avoid re-applying identical color
-    cache_file = "/tmp/papirus_matugen_last_color"
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r") as f:
-                if f.read().strip() == color_name:
-                    return
-        except Exception:
-            pass
-
     print(f"📁 Changing Papirus folder color to '{color_name}'...")
     for theme in THEMES:
         user_path = os.path.join(USER_ICONS_DIR, theme)
         if os.path.exists(user_path):
             subprocess.run([papirus_bin, "-C", color_name, "-t", user_path, "-o"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Update GTK icon cache in user folder
+            subprocess.run(["gtk-update-icon-cache", "-f", "-q", user_path],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif os.path.exists(os.path.join(SYSTEM_ICONS_DIR, theme)):
-            # Try global if user directory doesn't exist
             subprocess.run([papirus_bin, "-C", color_name, "-t", theme, "-o"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    # Force GNOME / Nautilus to reload icon theme
+    target_icon_theme = "Papirus-Dark" if mode == "dark" else "Papirus"
     try:
-        with open(cache_file, "w") as f:
-            f.write(color_name)
+        current_theme = subprocess.check_output(
+            ["gsettings", "get", "org.gnome.desktop.interface", "icon-theme"],
+            text=True
+        ).strip().strip("'")
+        
+        # Toggle briefly if already set to force icon redraw
+        if current_theme == target_icon_theme:
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", "Adwaita"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.05)
+        
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", target_icon_theme],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1].startswith("#"):
-        hex_color = sys.argv[1]
-    else:
-        # Read from generated gtk-3.0/gtk.css or gtk-4.0/gtk.css
-        hex_color = "#3584e4"
+    mode = "dark"
+    hex_color = "#3584e4"
+
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--mode" and i + 1 < len(args):
+            mode = args[i + 1]
+            i += 2
+        elif args[i].startswith("#"):
+            hex_color = args[i]
+            i += 1
+        else:
+            i += 1
+
+    # Read color from generated gtk css if not provided
+    if hex_color == "#3584e4":
         css_path = os.path.expanduser("~/.config/gtk-4.0/gtk.css")
         if not os.path.exists(css_path):
             css_path = os.path.expanduser("~/.config/gtk-3.0/gtk.css")
@@ -149,7 +147,7 @@ def main():
 
     ensure_user_icons()
     color_name = hex_to_papirus_color(hex_color)
-    apply_color(color_name)
+    apply_color(color_name, mode=mode)
 
 if __name__ == "__main__":
     main()

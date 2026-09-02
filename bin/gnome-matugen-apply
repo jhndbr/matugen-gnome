@@ -21,6 +21,7 @@ Options:
   --color <#hex>       Hex color value (e.g., "#3b82f6")
   --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
   --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
+  --prefer <pref>      Matugen 4+ preference (closest_to_fallback, saturation, darkness, lightness)
   --contrast <float>   Contrast value between -1.0 and 1.0 (Default: 0.0)
   --no-icons           Skip Papirus folder icons color synchronization
   -h, --help           Show this help message
@@ -62,8 +63,10 @@ IMAGE_PATH=""
 COLOR_HEX=""
 MODE=""
 SCHEME_TYPE="scheme-tonal-spot"
+PREFER="closest_to_fallback"
 CONTRAST=""
 SYNC_ICONS=true
+EXPLICIT_MODE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -77,10 +80,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --mode)
       MODE="${2:-}"
+      EXPLICIT_MODE=true
       shift 2
       ;;
     --type)
       SCHEME_TYPE="${2:-}"
+      shift 2
+      ;;
+    --prefer)
+      PREFER="${2:-}"
       shift 2
       ;;
     --contrast)
@@ -103,7 +111,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Detect current mode if not specified
+# Detect current mode if not explicitly set via CLI
 if [[ -z "$MODE" ]]; then
   CURRENT_SCHEME="$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "'default'")"
   CURRENT_SCHEME="${CURRENT_SCHEME//\'/}"
@@ -239,6 +247,9 @@ EOF
 MATUGEN_ARGS=()
 if [[ -n "$IMAGE_PATH" ]]; then
   MATUGEN_ARGS+=(image "$IMAGE_PATH")
+  if [[ -n "$PREFER" ]]; then
+    MATUGEN_ARGS+=(--prefer "$PREFER")
+  fi
 else
   MATUGEN_ARGS+=(color hex "$COLOR_HEX")
 fi
@@ -250,7 +261,7 @@ fi
 
 # Run Matugen with fallback protection
 if ! "$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"; then
-  echo "⚠️ Matugen failed with the image source. Retrying with fallback color (#3584e4)..." >&2
+  echo "⚠️ Matugen failed with image source. Retrying with fallback color (#3584e4)..." >&2
   "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
 fi
 
@@ -258,13 +269,19 @@ fi
 echo "⚙️ Compiling GNOME Shell stylesheet..."
 sassc "$TEMPLATES_DIR/gnome-shell.scss" "$THEME_DIR/gnome-shell.css"
 
-# Apply GNOME settings
+# Apply GNOME settings (Do NOT set color-scheme unless explicitly requested by user CLI flag)
 echo "✨ Updating GNOME Desktop settings..."
+if [[ "$EXPLICIT_MODE" == "true" ]]; then
+  if [[ "$MODE" == "dark" ]]; then
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' || true
+  else
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-light' || true
+  fi
+fi
+
 if [[ "$MODE" == "dark" ]]; then
-  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' || true
   gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' || true
 else
-  gsettings set org.gnome.desktop.interface color-scheme 'prefer-light' || true
   gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' || true
 fi
 
@@ -284,16 +301,7 @@ if [[ "$SYNC_ICONS" == "true" ]]; then
   fi
 
   if [[ -x "$SYNC_ICONS_BIN" ]]; then
-    "$SYNC_ICONS_BIN" || true
-
-    # Ensure GNOME uses Papirus icon theme if available
-    if [[ -d "/usr/share/icons/Papirus" || -d "$HOME/.local/share/icons/Papirus" || -d "$HOME/.icons/Papirus" ]]; then
-      if [[ "$MODE" == "dark" ]]; then
-        gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark' || true
-      else
-        gsettings set org.gnome.desktop.interface icon-theme 'Papirus' || true
-      fi
-    fi
+    "$SYNC_ICONS_BIN" --mode "$MODE" || true
   fi
 fi
 
