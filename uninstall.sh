@@ -27,9 +27,11 @@ echo "🔄 Resetting GNOME theme settings..."
 gsettings set org.gnome.shell.extensions.user-theme name '' 2>/dev/null || true
 gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita' 2>/dev/null || true
 
-# 3. Clean CSS files generated
+# 3. Clean CSS and Qt/Kvantum files generated
 rm -f "$HOME/.config/gtk-3.0/gtk.css"
 rm -f "$HOME/.config/gtk-4.0/gtk.css"
+rm -rf "$HOME/.config/Kvantum/MaterialYou"
+rm -f "$HOME/.config/environment.d/90-matugen-qt.conf"
 rm -rf "$THEME_DIR"
 rm -rf "$CONFIG_DIR"
 rm -f "$BIN_DIR/gnome-matugen-apply"

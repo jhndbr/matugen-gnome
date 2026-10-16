@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <!-- Window & Dialog Interior -->
+  <rect id="window-normal" x="0" y="0" width="48" height="48" fill="{{colors.background.default.hex}}" />
+
+  <!-- Toolbar & Menubar Interior (Unified Headerbar style) -->
+  <rect id="toolbar-normal" x="60" y="0" width="48" height="48" fill="{{colors.surface.default.hex}}" />
+  <rect id="menubar-normal" x="120" y="0" width="48" height="48" fill="{{colors.surface.default.hex}}" />
+
+  <!-- Standard Buttons -->
+  <rect id="button-normal" x="0" y="60" width="36" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="button-focus" x="40" y="60" width="36" height="36" rx="8" fill="{{colors.surface_container_highest.default.hex}}" stroke="{{colors.primary.default.hex}}" stroke-width="1" />
+  <rect id="button-pressed" x="80" y="60" width="36" height="36" rx="8" fill="{{colors.primary.default.hex}}" />
+  <rect id="button-toggled" x="120" y="60" width="36" height="36" rx="8" fill="{{colors.primary_container.default.hex}}" />
+  <rect id="button-disabled" x="160" y="60" width="36" height="36" rx="8" fill="{{colors.surface_container_low.default.hex}}" opacity="0.5" />
+
+  <!-- ToolButtons -->
+  <rect id="toolbutton-normal" x="0" y="100" width="36" height="36" rx="8" fill="none" />
+  <rect id="toolbutton-focus" x="40" y="100" width="36" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="toolbutton-pressed" x="80" y="100" width="36" height="36" rx="8" fill="{{colors.primary_container.default.hex}}" />
+  <rect id="toolbutton-toggled" x="120" y="100" width="36" height="36" rx="8" fill="{{colors.secondary_container.default.hex}}" />
+
+  <!-- Menus & MenuItems -->
+  <rect id="menu-normal" x="0" y="140" width="48" height="48" rx="10" fill="{{colors.surface_container.default.hex}}" stroke="{{colors.outline_variant.default.hex}}" stroke-width="1" />
+  <rect id="menuitem-normal" x="60" y="140" width="36" height="36" rx="6" fill="none" />
+  <rect id="menuitem-focus" x="100" y="140" width="36" height="36" rx="6" fill="{{colors.primary_container.default.hex}}" />
+  <rect id="menuitem-pressed" x="140" y="140" width="36" height="36" rx="6" fill="{{colors.primary_container.default.hex}}" />
+
+  <!-- Headers -->
+  <rect id="header-normal" x="0" y="200" width="36" height="36" fill="{{colors.surface_container_low.default.hex}}" />
+  <rect id="header-focus" x="40" y="200" width="36" height="36" fill="{{colors.surface_container.default.hex}}" />
+  <rect id="header-pressed" x="80" y="200" width="36" height="36" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="header-toggled" x="120" y="200" width="36" height="36" fill="{{colors.surface_container.default.hex}}" />
+
+  <!-- Tabs & TabFrame -->
+  <rect id="tab-normal" x="0" y="240" width="36" height="36" rx="8" fill="{{colors.surface_container_low.default.hex}}" />
+  <rect id="tab-focus" x="40" y="240" width="36" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="tab-pressed" x="80" y="240" width="36" height="36" rx="8" fill="{{colors.surface_container_highest.default.hex}}" />
+  <rect id="tab-toggled" x="120" y="240" width="36" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="tabframe-normal" x="160" y="240" width="48" height="48" rx="8" fill="{{colors.surface.default.hex}}" />
+
+  <!-- LineEdit & ComboBox -->
+  <rect id="lineedit-normal" x="0" y="290" width="36" height="36" rx="8" fill="{{colors.surface_container_lowest.default.hex}}" stroke="{{colors.outline_variant.default.hex}}" stroke-width="1" />
+  <rect id="lineedit-focus" x="40" y="290" width="36" height="36" rx="8" fill="{{colors.surface_container_lowest.default.hex}}" stroke="{{colors.primary.default.hex}}" stroke-width="1.5" />
+  <rect id="combobox-normal" x="80" y="290" width="36" height="36" rx="8" fill="{{colors.surface_container.default.hex}}" stroke="{{colors.outline_variant.default.hex}}" stroke-width="1" />
+  <rect id="combobox-focus" x="120" y="290" width="36" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" stroke="{{colors.primary.default.hex}}" stroke-width="1.5" />
+  <rect id="combobox-pressed" x="160" y="290" width="36" height="36" rx="8" fill="{{colors.primary_container.default.hex}}" />
+
+  <!-- ItemView (Lists, Trees, Tables) -->
+  <rect id="itemview-normal" x="0" y="330" width="36" height="36" rx="6" fill="none" />
+  <rect id="itemview-focus" x="40" y="330" width="36" height="36" rx="6" fill="{{colors.surface_container_high.default.hex}}" />
+  <rect id="itemview-pressed" x="80" y="330" width="36" height="36" rx="6" fill="{{colors.primary_container.default.hex}}" />
+  <rect id="itemview-toggled" x="120" y="330" width="36" height="36" rx="6" fill="{{colors.primary_container.default.hex}}" />
+
+  <!-- Progressbar, Slider & Tooltip -->
+  <rect id="progressbar-normal" x="200" y="60" width="36" height="16" rx="6" fill="{{colors.surface_container_highest.default.hex}}" />
+  <rect id="progressbar-focus" x="240" y="60" width="36" height="16" rx="6" fill="{{colors.primary.default.hex}}" />
+  <rect id="slider-normal" x="200" y="100" width="36" height="12" rx="6" fill="{{colors.surface_container_highest.default.hex}}" />
+  <circle id="slidercursor-normal" cx="260" cy="108" r="9" fill="{{colors.primary.default.hex}}" />
+  <circle id="slidercursor-focus" cx="285" cy="108" r="9" fill="{{colors.primary.default.hex}}" stroke="{{colors.on_primary.default.hex}}" stroke-width="1.5" />
+  <circle id="slidercursor-pressed" cx="310" cy="108" r="9" fill="{{colors.on_primary_container.default.hex}}" />
+  <rect id="tooltip-normal" x="200" y="140" width="48" height="36" rx="8" fill="{{colors.surface_container_high.default.hex}}" stroke="{{colors.outline_variant.default.hex}}" stroke-width="1" />
+</svg>
