@@ -11,37 +11,76 @@ from queue import Queue, Empty
 # Native GNOME GSettings event listener with asynchronous worker queue
 # ==============================================================================
 
-APPLY_BIN = os.path.expanduser("~/.local/bin/gnome-matugen-apply")
-if not os.path.exists(APPLY_BIN):
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+APPLY_BIN = os.path.join(SCRIPT_DIR, "gnome-matugen-apply")
+if not os.path.isfile(APPLY_BIN):
+    APPLY_BIN = os.path.expanduser("~/.local/bin/gnome-matugen-apply")
+if not os.path.isfile(APPLY_BIN):
     APPLY_BIN = "gnome-matugen-apply"
 
 event_queue = Queue()
 # Keep strong references to Gio.Settings objects to prevent garbage collection
 GSETTINGS_HOLDERS = []
+LAST_STATE = {"uri": None, "uri_dark": None, "scheme": None}
+
+
+def get_current_state():
+    uri = ""
+    uri_dark = ""
+    scheme = ""
+    try:
+        uri = subprocess.check_output(
+            ["gsettings", "get", "org.gnome.desktop.background", "picture-uri"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        uri_dark = subprocess.check_output(
+            ["gsettings", "get", "org.gnome.desktop.background", "picture-uri-dark"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        scheme = subprocess.check_output(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        pass
+    return (uri, uri_dark, scheme)
+
 
 def worker():
+    last_tuple = None
     while True:
         try:
-            # Wait for an event
             event = event_queue.get()
-            # Drain any duplicate events in queue (debounce)
-            time.sleep(0.5)
+            # Drain duplicate events in queue (debounce)
+            time.sleep(0.4)
             while not event_queue.empty():
                 try:
                     event_queue.get_nowait()
                     event_queue.task_done()
                 except Empty:
                     break
-            
-            print("🔔 Triggering theme update...", flush=True)
+
+            current_tuple = get_current_state()
+            if event != "initial" and current_tuple == last_tuple and any(current_tuple):
+                event_queue.task_done()
+                continue
+
+            last_tuple = current_tuple
+            print(f"🔔 Triggering theme update (reason: {event})...", flush=True)
             subprocess.run([APPLY_BIN], check=False)
             event_queue.task_done()
         except Exception as e:
             print(f"⚠️ Worker error: {e}", file=sys.stderr, flush=True)
 
+
 def on_setting_changed(settings, key):
-    print(f"📡 Setting changed: {settings.get_property('schema-id')}.{key}", flush=True)
+    try:
+        val = settings.get_string(key)
+    except Exception:
+        val = ""
+    print(f"📡 Setting changed: {settings.get_property('schema-id')}.{key} -> {val}", flush=True)
     event_queue.put(key)
+
 
 def start_gio_daemon():
     try:
@@ -62,13 +101,17 @@ def start_gio_daemon():
     # Initial trigger
     event_queue.put("initial")
 
+    source = Gio.SettingsSchemaSource.get_default()
+
     # 1. Background schema
     bg_schema = "org.gnome.desktop.background"
-    source = Gio.SettingsSchemaSource.get_default()
     if source and source.lookup(bg_schema, True):
         bg_settings = Gio.Settings.new(bg_schema)
         bg_settings.connect("changed::picture-uri", on_setting_changed)
         bg_settings.connect("changed::picture-uri-dark", on_setting_changed)
+        # IMPORTANT: Read keys once so GSettings/dconf subscribes to D-Bus change signals
+        _ = bg_settings.get_string("picture-uri")
+        _ = bg_settings.get_string("picture-uri-dark")
         GSETTINGS_HOLDERS.append(bg_settings)
 
     # 2. Interface schema (Dark/Light mode switch)
@@ -76,6 +119,8 @@ def start_gio_daemon():
     if source and source.lookup(if_schema, True):
         if_settings = Gio.Settings.new(if_schema)
         if_settings.connect("changed::color-scheme", on_setting_changed)
+        # IMPORTANT: Read key once so GSettings/dconf subscribes to D-Bus change signals
+        _ = if_settings.get_string("color-scheme")
         GSETTINGS_HOLDERS.append(if_settings)
 
     loop = GLib.MainLoop()
@@ -84,6 +129,7 @@ def start_gio_daemon():
     except (KeyboardInterrupt, SystemExit):
         pass
     return True
+
 
 def start_bash_fallback():
     print("⚠️ Using unbuffered stdbuf monitor fallback...", flush=True)
@@ -102,9 +148,11 @@ def start_bash_fallback():
         if line.strip():
             event_queue.put("bash_event")
 
+
 def main():
     if not start_gio_daemon():
         start_bash_fallback()
+
 
 if __name__ == "__main__":
     main()

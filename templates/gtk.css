@@ -1,6 +1,8 @@
 /*
  * GTK Colors - Generated with Matugen for GNOME / Debian 13
  * Works with Libadwaita (GTK4) and adw-gtk3 (GTK3)
+ * @matugen_source_color {{colors.source_color.default.hex}}
+ * @matugen_primary_color {{colors.primary.default.hex}}
  */
 
 @define-color accent_color {{colors.primary.default.hex}};

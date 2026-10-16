@@ -3,8 +3,12 @@ set -euo pipefail
 
 # ==============================================================================
 # gnome-matugen-apply
-# Generates and applies Material You color schemes to GNOME (GTK 3/4, Shell & Icons)
+# Generates and applies Material You color schemes to GNOME:
+# GTK 3/4, GNOME Shell, Papirus Folder Icons, and Qt5/Qt6 (qt5ct/qt6ct + Kvantum)
 # ==============================================================================
+
+SCRIPT_REAL_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+REPO_TEMPLATES_DIR="$(cd "$SCRIPT_REAL_DIR/.." 2>/dev/null && pwd)/templates"
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -21,7 +25,7 @@ Options:
   --color <#hex>       Hex color value (e.g., "#3b82f6")
   --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
   --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
-  --prefer <pref>      Matugen 4+ preference (closest_to_fallback, saturation, darkness, lightness)
+  --prefer <pref>      Matugen 4+ preference (saturation, darkness, lightness, value, closest-to-fallback)
   --contrast <float>   Contrast value between -1.0 and 1.0 (Default: 0.0)
   --no-icons           Skip Papirus folder icons color synchronization
   -h, --help           Show this help message
@@ -32,6 +36,58 @@ Examples:
   gnome-matugen-apply --color "#7c3aed"
 EOF
 }
+
+# Sync templates from repository if running from repo checkout or if templates are missing
+if [[ -d "$REPO_TEMPLATES_DIR" ]]; then
+  mkdir -p "$CONFIG_DIR/gnome-matugen"
+  rm -rf "$TEMPLATES_DIR"
+  cp -r "$REPO_TEMPLATES_DIR" "$TEMPLATES_DIR"
+fi
+
+# Ensure Qt (qt5ct, qt6ct, Kvantum), sassc, and Papirus dependencies are installed
+ensure_dependencies() {
+  local missing_pkgs=()
+  if ! command -v sassc >/dev/null 2>&1; then
+    missing_pkgs+=("sassc")
+  fi
+  if ! command -v qt5ct >/dev/null 2>&1; then
+    missing_pkgs+=("qt5ct")
+  fi
+  if ! command -v qt6ct >/dev/null 2>&1; then
+    missing_pkgs+=("qt6ct")
+  fi
+  if ! command -v kvantummanager >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      missing_pkgs+=("qt-style-kvantum" "qt5-style-kvantum" "qt6-style-kvantum")
+    elif command -v pacman >/dev/null 2>&1; then
+      missing_pkgs+=("kvantum" "kvantum-qt5")
+    elif command -v dnf >/dev/null 2>&1; then
+      missing_pkgs+=("kvantum")
+    fi
+  fi
+  if [[ ! -d "/usr/share/icons/Papirus" && ! -d "$DATA_DIR/icons/Papirus" ]]; then
+    missing_pkgs+=("papirus-icon-theme")
+  fi
+
+  if [[ ${#missing_pkgs[@]} -gt 0 ]]; then
+    # Install automatically if running interactively in a terminal or passwordless sudo is available
+    if [[ -t 0 ]] || sudo -n true 2>/dev/null; then
+      echo "📦 Installing missing dependencies (${missing_pkgs[*]})..."
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update 2>/dev/null || true
+        for pkg in "${missing_pkgs[@]}"; do
+          sudo apt-get install -y "$pkg" 2>/dev/null || true
+        done
+      elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --needed --noconfirm "${missing_pkgs[@]}" 2>/dev/null || true
+      elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y "${missing_pkgs[@]}" 2>/dev/null || true
+      fi
+    fi
+  fi
+}
+
+ensure_dependencies
 
 # Find matugen binary
 find_matugen() {
@@ -151,6 +207,7 @@ if [[ -n "$IMAGE_PATH" && ! -f "$IMAGE_PATH" ]]; then
   URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
   URI="${URI//\'/}"
   IMAGE_PATH="${URI#file://}"
+  IMAGE_PATH="$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$IMAGE_PATH" 2>/dev/null || echo "$IMAGE_PATH")"
 fi
 
 if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
@@ -158,7 +215,34 @@ if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
   exit 1
 fi
 
-# Handle .jxl images (Debian 13 default GNOME wallpapers)
+# Resolve XML wallpaper definitions (used by Debian desktop-base and GNOME timed backgrounds)
+if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" && "${IMAGE_PATH,,}" == *.xml ]]; then
+  RESOLVED_XML_IMG="$(python3 - "$IMAGE_PATH" "$MODE" << 'PYEOF'
+import sys, os, re
+
+xml_path, mode = sys.argv[1], sys.argv[2]
+try:
+    with open(xml_path, "r", errors="ignore") as f:
+        content = f.read()
+    files = [m.strip() for m in re.findall(r"<(?:file|filename|to|from)>([^<]+)</(?:file|filename|to|from)>", content)]
+    valid = [p for p in files if os.path.isfile(p)]
+    if valid:
+        if mode == "dark":
+            dark_cand = [p for p in valid if "dark" in os.path.basename(p).lower() or "-d." in os.path.basename(p).lower() or "-n." in os.path.basename(p).lower()]
+            if dark_cand:
+                print(dark_cand[0])
+                sys.exit(0)
+        print(valid[0])
+except Exception:
+    pass
+PYEOF
+  )"
+  if [[ -n "$RESOLVED_XML_IMG" && -f "$RESOLVED_XML_IMG" ]]; then
+    IMAGE_PATH="$RESOLVED_XML_IMG"
+  fi
+fi
+
+# Handle .jxl and .svg images (Debian 13 default GNOME wallpapers)
 TEMP_CONVERTED_IMAGE=""
 cleanup_temp() {
   if [[ -n "$TEMP_CONVERTED_IMAGE" && -f "$TEMP_CONVERTED_IMAGE" ]]; then
@@ -170,17 +254,23 @@ cleanup_temp() {
 }
 trap cleanup_temp EXIT
 
-if [[ -n "$IMAGE_PATH" && "${IMAGE_PATH,,}" == *.jxl ]]; then
-  echo "🖼️  Detected JPEG XL (.jxl) image, converting to temporary PNG..."
+if [[ -n "$IMAGE_PATH" && ( "${IMAGE_PATH,,}" == *.jxl || "${IMAGE_PATH,,}" == *.svg ) ]]; then
+  echo "🖼️  Detected ${IMAGE_PATH##*.} wallpaper, converting to temporary PNG..."
   TEMP_CONVERTED_IMAGE="$(mktemp /tmp/matugen_wall_XXXXXX.png)"
-  
+
   CONVERTED=false
-  if command -v djxl >/dev/null 2>&1; then
+  if [[ "${IMAGE_PATH,,}" == *.jxl ]] && command -v djxl >/dev/null 2>&1; then
     if djxl "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
       CONVERTED=true
     fi
   fi
-  
+
+  if [[ "$CONVERTED" != "true" && "${IMAGE_PATH,,}" == *.svg ]] && command -v rsvg-convert >/dev/null 2>&1; then
+    if rsvg-convert "$IMAGE_PATH" -o "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
+      CONVERTED=true
+    fi
+  fi
+
   if [[ "$CONVERTED" != "true" ]] && command -v magick >/dev/null 2>&1; then
     if magick "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" >/dev/null 2>&1; then
       CONVERTED=true
@@ -199,10 +289,23 @@ if [[ -n "$IMAGE_PATH" && "${IMAGE_PATH,,}" == *.jxl ]]; then
     fi
   fi
 
+  # GdkPixbuf fallback (built into GNOME via python3-gi)
+  if [[ "$CONVERTED" != "true" ]]; then
+    if python3 -c "
+import sys, gi
+gi.require_version('GdkPixbuf', '2.0')
+from gi.repository import GdkPixbuf
+pb = GdkPixbuf.Pixbuf.new_from_file(sys.argv[1])
+pb.savev(sys.argv[2], 'png', [], [])
+" "$IMAGE_PATH" "$TEMP_CONVERTED_IMAGE" 2>/dev/null; then
+      CONVERTED=true
+    fi
+  fi
+
   if [[ "$CONVERTED" == "true" && -s "$TEMP_CONVERTED_IMAGE" ]]; then
     IMAGE_PATH="$TEMP_CONVERTED_IMAGE"
   else
-    echo "⚠️ Could not convert .jxl via djxl/magick/ffmpeg. Falling back to default accent color." >&2
+    echo "⚠️ Could not convert wallpaper image. Falling back to default accent color." >&2
     IMAGE_PATH=""
     COLOR_HEX="#3584e4"
   fi
@@ -267,7 +370,10 @@ EOF
 # Build matugen command args
 MATUGEN_ARGS=()
 if [[ -n "$IMAGE_PATH" ]]; then
-  MATUGEN_ARGS+=(image "$IMAGE_PATH" --source-color-index 0)
+  MATUGEN_ARGS+=(image "$IMAGE_PATH" --prefer "$PREFER")
+  if [[ "$PREFER" == "closest-to-fallback" ]]; then
+    MATUGEN_ARGS+=(--fallback-color "#3584e4")
+  fi
 else
   MATUGEN_ARGS+=(color hex "$COLOR_HEX")
 fi
@@ -278,30 +384,44 @@ if [[ -n "$CONTRAST" ]]; then
 fi
 
 # Run Matugen with fallback protection
-if ! "$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"; then
-  echo "⚠️ Matugen failed with image source. Retrying with fallback color (#3584e4)..." >&2
-  "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
+if ! "$MATUGEN_BIN" "${MATUGEN_ARGS[@]}" 2>/dev/null; then
+  if [[ -n "$IMAGE_PATH" ]]; then
+    if ! "$MATUGEN_BIN" image "$IMAGE_PATH" --source-color-index 0 -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG" 2>/dev/null; then
+      echo "⚠️ Matugen failed with image source. Retrying with fallback color (#3584e4)..." >&2
+      "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
+    fi
+  else
+    "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
+  fi
 fi
 
-# Configure Kvantum active theme
+# Configure Kvantum active theme (including MaterialYouDark links for dark mode)
 echo "⚙️ Configuring Kvantum & Qt5/Qt6 settings..."
 cat > "$CONFIG_DIR/Kvantum/kvantum.kvconfig" << 'EOF'
 [General]
 theme=MaterialYou
 EOF
 
-# Helper function to configure qt5ct.conf and qt6ct.conf with Kvantum + MaterialYou palette
+ln -sf "MaterialYou.kvconfig" "$CONFIG_DIR/Kvantum/MaterialYou/MaterialYouDark.kvconfig" 2>/dev/null || true
+ln -sf "MaterialYou.svg" "$CONFIG_DIR/Kvantum/MaterialYou/MaterialYouDark.svg" 2>/dev/null || true
+
+if command -v kvantummanager >/dev/null 2>&1; then
+  kvantummanager --set MaterialYou >/dev/null 2>&1 || true
+fi
+
+TARGET_ICON_THEME="Papirus-Dark"
+if [[ "$MODE" == "light" ]]; then
+  TARGET_ICON_THEME="Papirus"
+fi
+
+# Helper function to configure qt5ct.conf and qt6ct.conf with Kvantum + MaterialYou palette + Papirus icons
 configure_qtct() {
   local qt_ver="$1"
   local cfg="$CONFIG_DIR/${qt_ver}/${qt_ver}.conf"
   local scheme_path="$CONFIG_DIR/${qt_ver}/colors/MaterialYou.conf"
-  local current_icon_theme
-  current_icon_theme="$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo "'Adwaita'")"
-  current_icon_theme="${current_icon_theme//\'/}"
-  [[ -z "$current_icon_theme" ]] && current_icon_theme="Adwaita"
 
   if [[ -f "$cfg" ]]; then
-    python3 - "$cfg" "$scheme_path" "$current_icon_theme" << 'PYEOF'
+    python3 - "$cfg" "$scheme_path" "$TARGET_ICON_THEME" << 'PYEOF'
 import sys, configparser
 
 cfg_path, scheme_path, icon_theme = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -319,8 +439,7 @@ cp["Appearance"]["style"] = "kvantum"
 cp["Appearance"]["custom_palette"] = "true"
 cp["Appearance"]["color_scheme_path"] = scheme_path
 cp["Appearance"]["standard_dialogs"] = "xdgdesktopportal"
-if "icon_theme" not in cp["Appearance"] or not cp["Appearance"]["icon_theme"]:
-    cp["Appearance"]["icon_theme"] = icon_theme
+cp["Appearance"]["icon_theme"] = icon_theme
 
 with open(cfg_path, "w") as f:
     cp.write(f, space_around_delimiters=False)
@@ -330,7 +449,7 @@ PYEOF
 [Appearance]
 color_scheme_path=$scheme_path
 custom_palette=true
-icon_theme=$current_icon_theme
+icon_theme=$TARGET_ICON_THEME
 standard_dialogs=xdgdesktopportal
 style=kvantum
 EOF
@@ -363,7 +482,7 @@ fi
 echo "⚙️ Compiling GNOME Shell stylesheet..."
 sassc "$TEMPLATES_DIR/gnome-shell.scss" "$THEME_DIR/gnome-shell.css"
 
-# Apply GNOME settings (Do NOT set color-scheme unless explicitly requested by user CLI flag)
+# Apply GNOME settings
 echo "✨ Updating GNOME Desktop settings..."
 if [[ "$EXPLICIT_MODE" == "true" ]]; then
   if [[ "$MODE" == "dark" ]]; then
@@ -373,13 +492,66 @@ if [[ "$EXPLICIT_MODE" == "true" ]]; then
   fi
 fi
 
+# Extract generated colors from gtk.css
+SOURCE_HEX="$(grep -m1 '@matugen_source_color' "$CONFIG_DIR/gtk-4.0/gtk.css" 2>/dev/null | awk '{print $3}' || true)"
+ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-4.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
+if [[ -z "$ACCENT_HEX" && -f "$CONFIG_DIR/gtk-3.0/gtk.css" ]]; then
+  ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-3.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
+fi
+
+# Sync GNOME 47/48 native accent-color setting if supported
+if [[ -n "${SOURCE_HEX:-$ACCENT_HEX}" ]]; then
+  GNOME_ACCENT="$(python3 - "${SOURCE_HEX:-$ACCENT_HEX}" "$ACCENT_HEX" << 'PYEOF'
+import sys, colorsys
+
+def to_hsv(h_str):
+    h_str = h_str.strip().lstrip("#")
+    if len(h_str) != 6:
+        return None
+    r, g, b = int(h_str[0:2], 16)/255.0, int(h_str[2:4], 16)/255.0, int(h_str[4:6], 16)/255.0
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    return h * 360.0, s, v
+
+best = None
+for arg in sys.argv[1:]:
+    hsv = to_hsv(arg)
+    if hsv and (best is None or hsv[1] > best[1]):
+        best = hsv
+
+if not best or best[1] < 0.12:
+    print("slate")
+else:
+    hue = best[0]
+    if hue >= 345 or hue < 15:
+        print("red")
+    elif 15 <= hue < 42:
+        print("orange")
+    elif 42 <= hue < 70:
+        print("yellow")
+    elif 70 <= hue < 160:
+        print("green")
+    elif 160 <= hue < 200:
+        print("teal")
+    elif 200 <= hue < 255:
+        print("blue")
+    elif 255 <= hue < 305:
+        print("purple")
+    else:
+        print("pink")
+PYEOF
+  )"
+  if [[ -n "$GNOME_ACCENT" ]]; then
+    gsettings set org.gnome.desktop.interface accent-color "$GNOME_ACCENT" 2>/dev/null || true
+  fi
+fi
+
 # Force GTK stylesheet reload
-gsettings set org.gnome.desktop.interface gtk-theme '' || true
+gsettings set org.gnome.desktop.interface gtk-theme '' 2>/dev/null || true
 sleep 0.1
 if [[ "$MODE" == "dark" ]]; then
-  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' || true
+  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' 2>/dev/null || true
 else
-  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' || true
+  gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' 2>/dev/null || true
 fi
 
 # Reload Shell Theme via user-theme extension
@@ -391,22 +563,21 @@ gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' 2>/dev/n
 # Synchronize Papirus Folder Icons
 # ------------------------------------------------------------------------------
 if [[ "$SYNC_ICONS" == "true" ]]; then
-  SYNC_ICONS_BIN="$(dirname "$0")/sync-papirus-folders"
+  SYNC_ICONS_BIN="$SCRIPT_REAL_DIR/sync-papirus-folders"
   if [[ ! -x "$SYNC_ICONS_BIN" ]]; then
     SYNC_ICONS_BIN="$HOME/.local/bin/sync-papirus-folders"
   fi
 
   if [[ -x "$SYNC_ICONS_BIN" ]]; then
-    ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-4.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
-    if [[ -z "$ACCENT_HEX" && -f "$CONFIG_DIR/gtk-3.0/gtk.css" ]]; then
-      ACCENT_HEX="$(grep -m1 '@define-color accent_color' "$CONFIG_DIR/gtk-3.0/gtk.css" 2>/dev/null | awk '{print $3}' | tr -d ';' || true)"
-    fi
+    SYNC_ARGS=(--mode "$MODE")
+    [[ -n "$COLOR_HEX" ]] && SYNC_ARGS+=(--color "$COLOR_HEX")
+    [[ -n "$SOURCE_HEX" ]] && SYNC_ARGS+=(--color "$SOURCE_HEX")
+    [[ -n "$ACCENT_HEX" ]] && SYNC_ARGS+=(--color "$ACCENT_HEX")
+    [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]] && SYNC_ARGS+=(--image "$IMAGE_PATH")
 
-    if [[ -n "$ACCENT_HEX" ]]; then
-      "$SYNC_ICONS_BIN" --mode "$MODE" "$ACCENT_HEX" || true
-    else
-      "$SYNC_ICONS_BIN" --mode "$MODE" || true
-    fi
+    "$SYNC_ICONS_BIN" "${SYNC_ARGS[@]}" || true
+  else
+    echo "⚠️ Warning: sync-papirus-folders not found at $SYNC_ICONS_BIN" >&2
   fi
 fi
 

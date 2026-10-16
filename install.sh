@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ==============================================================================
 # Installer for GNOME Matugen Material You Themer
-# Tested on Debian 13 (Trixie), Ubuntu, and other GNOME-based Linux distributions
+# Tested on Debian 13 (Trixie), Ubuntu, Arch Linux, and Fedora
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,35 +14,85 @@ THEMES_USER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/themes"
 ICONS_USER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
 
 echo "=========================================================="
-echo " 🎨  GNOME Matugen Material You - Installer for Debian 13"
+echo " 🎨  GNOME Matugen Material You - Complete Installer"
 echo "=========================================================="
 echo ""
 
-# 1. Install System Dependencies
-echo "📦 Step 1: Installing system dependencies..."
+install_apt_pkgs() {
+  if ! sudo apt-get install -y "$@" 2>/dev/null; then
+    for pkg in "$@"; do
+      sudo apt-get install -y "$pkg" 2>/dev/null || echo "ℹ️ Optional/transitional package '$pkg' skipped."
+    done
+  fi
+}
+
+install_pacman_pkgs() {
+  if ! sudo pacman -S --needed --noconfirm "$@" 2>/dev/null; then
+    for pkg in "$@"; do
+      sudo pacman -S --needed --noconfirm "$pkg" 2>/dev/null || echo "ℹ️ Optional package '$pkg' skipped."
+    done
+  fi
+}
+
+install_dnf_pkgs() {
+  if ! sudo dnf install -y "$@" 2>/dev/null; then
+    for pkg in "$@"; do
+      sudo dnf install -y "$pkg" 2>/dev/null || echo "ℹ️ Optional package '$pkg' skipped."
+    done
+  fi
+}
+
+# 1. Install System & Qt/Kvantum Dependencies
+echo "📦 Step 1: Installing system, GTK, Icon, and Qt5/Qt6 + Kvantum dependencies..."
 if command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get update
-  sudo apt-get install -y \
+  # Comment out active cdrom entries on fresh Debian installs so apt-get update does not fail
+  if grep -q '^deb cdrom:' /etc/apt/sources.list 2>/dev/null; then
+    sudo sed -i '/^deb cdrom:/s/^/# /' /etc/apt/sources.list 2>/dev/null || true
+  fi
+  sudo apt-get update || true
+
+  echo "  -> Installing core GNOME, Matugen & Papirus dependencies..."
+  install_apt_pkgs \
     sassc \
     gnome-shell-extensions \
+    gnome-shell-extension-prefs \
     gnome-tweaks \
-    qt5ct \
-    qt6ct \
-    qt5-style-kvantum \
     inotify-tools \
     libjxl-tools \
     imagemagick \
+    librsvg2-bin \
     papirus-icon-theme \
+    libgtk-3-bin \
+    gtk-update-icon-cache \
+    python3 \
     python3-gi \
+    python3-pil \
     gir1.2-glib-2.0 \
+    gir1.2-gdkpixbuf-2.0 \
     curl \
     wget \
     tar \
-    xz-utils
-  # Install Qt6 Kvantum plugin (available on Debian 13 Trixie / Ubuntu 24.04+)
-  sudo apt-get install -y qt6-style-kvantum 2>/dev/null || true
+    xz-utils \
+    dbus-x11
+
+  echo "  -> Installing Qt5ct, Qt6ct & Kvantum style engines..."
+  install_apt_pkgs \
+    qt5ct \
+    qt6ct \
+    qt-style-kvantum \
+    qt5-style-kvantum \
+    qt6-style-kvantum \
+    qt-style-kvantum-themes \
+    qt5-style-kvantum-themes \
+    libqt5svg5 \
+    libqt6svg6 \
+    libxcb-cursor0 \
+    qtwayland5 \
+    qt6-wayland
+
 elif command -v pacman >/dev/null 2>&1; then
-  sudo pacman -S --needed --noconfirm \
+  echo "  -> Installing packages via pacman (Arch Linux)..."
+  install_pacman_pkgs \
     sassc \
     gnome-shell-extensions \
     gnome-tweaks \
@@ -50,17 +100,60 @@ elif command -v pacman >/dev/null 2>&1; then
     qt6ct \
     kvantum \
     kvantum-qt5 \
+    qt5-wayland \
+    qt6-wayland \
+    qt5-svg \
+    qt6-svg \
+    papirus-icon-theme \
+    gtk-update-icon-cache \
     inotify-tools \
     libjxl \
     imagemagick \
+    librsvg \
     python-gobject \
+    python-pillow \
+    curl \
+    wget \
+    tar \
+    xz
+
+elif command -v dnf >/dev/null 2>&1; then
+  echo "  -> Installing packages via dnf (Fedora)..."
+  install_dnf_pkgs \
+    sassc \
+    gnome-shell-extensions \
+    gnome-tweaks \
+    qt5ct \
+    qt6ct \
+    kvantum \
+    qt5-qtwayland \
+    qt6-qtwayland \
+    qt5-qtsvg \
+    qt6-qtsvg \
+    papirus-icon-theme \
+    gtk-update-icon-cache \
+    inotify-tools \
+    libjxl-tools \
+    ImageMagick \
+    librsvg2-tools \
+    python3-gobject \
+    python3-pillow \
     curl \
     wget \
     tar \
     xz
 else
-  echo "⚠️ Package manager not recognized. Please ensure dependencies (including Kvantum & qt5ct/qt6ct) are installed manually."
+  echo "⚠️ Package manager not recognized. Please ensure sassc, papirus-icon-theme, qt5ct, qt6ct, and kvantum are installed."
 fi
+
+# Verify Qt & Kvantum installation status
+for tool in qt5ct qt6ct kvantummanager; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "  ✅ $tool is installed ($(command -v "$tool"))"
+  else
+    echo "  ⚠️ Warning: $tool was not found in PATH"
+  fi
+done
 
 mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$THEMES_USER_DIR" "$ICONS_USER_DIR" "${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
 
@@ -70,7 +163,7 @@ echo "🚀 Step 2: Checking Matugen installation..."
 if ! command -v matugen >/dev/null 2>&1 && [[ ! -x "$BIN_DIR/matugen" ]]; then
   echo "📥 Downloading Matugen binary (Linux x86_64)..."
   TMP_DIR="$(mktemp -d)"
-  
+
   if curl -sL -o "$TMP_DIR/matugen.tar.gz" https://github.com/InioX/matugen/releases/download/v4.2.0/matugen-4.2.0-x86_64.tar.gz; then
     tar -xzf "$TMP_DIR/matugen.tar.gz" -C "$TMP_DIR"
     cp "$TMP_DIR/matugen" "$BIN_DIR/matugen"
@@ -108,27 +201,43 @@ echo ""
 echo "📁 Step 4: Installing Papirus icon theme and papirus-folders..."
 mkdir -p "$ICONS_USER_DIR" "$BIN_DIR"
 
-if [[ ! -d "$ICONS_USER_DIR/Papirus" ]]; then
-  if [[ -d "/usr/share/icons/Papirus" ]]; then
-    echo "📦 Copying Papirus from system to $ICONS_USER_DIR..."
-    cp -ra /usr/share/icons/Papirus* "$ICONS_USER_DIR/" 2>/dev/null || true
+# Repair or remove any broken partial overlay from older versions
+if [[ -d "$ICONS_USER_DIR/Papirus" ]]; then
+  if [[ ! -d "$ICONS_USER_DIR/Papirus/128x128" || ! -d "$ICONS_USER_DIR/Papirus/48x48/apps" ]] || \
+     grep -q "Material You Dynamic Icons" "$ICONS_USER_DIR/Papirus/index.theme" 2>/dev/null; then
+    echo "🧹 Cleaning up incomplete Papirus overlay in $ICONS_USER_DIR..."
+    rm -rf "$ICONS_USER_DIR/Papirus" "$ICONS_USER_DIR/Papirus-Dark" "$ICONS_USER_DIR/Papirus-Light"
   fi
 fi
 
-if [[ ! -d "$ICONS_USER_DIR/Papirus" ]]; then
-  echo "📥 Downloading complete Papirus Icon Theme to $ICONS_USER_DIR..."
-  wget -qO- https://git.io/papirus-icon-theme-install | env DESTDIR="$ICONS_USER_DIR" sh || true
+if [[ ! -d "$ICONS_USER_DIR/Papirus" || ! -d "$ICONS_USER_DIR/Papirus-Dark" ]]; then
+  if [[ -d "/usr/share/icons/Papirus" ]]; then
+    echo "📦 Copying complete Papirus icon themes from system to $ICONS_USER_DIR..."
+    for variant in Papirus Papirus-Dark Papirus-Light; do
+      if [[ -d "/usr/share/icons/$variant" ]]; then
+        rm -rf "$ICONS_USER_DIR/$variant"
+        cp -ra "/usr/share/icons/$variant" "$ICONS_USER_DIR/$variant"
+      fi
+    done
+  else
+    echo "📥 Downloading complete Papirus Icon Theme to $ICONS_USER_DIR..."
+    wget -qO- https://git.io/papirus-icon-theme-install | env DESTDIR="$ICONS_USER_DIR" sh || true
+  fi
 fi
 
-if [[ -d "$ICONS_USER_DIR/Papirus" ]]; then
-  chmod -R u+w "$ICONS_USER_DIR/Papirus"* 2>/dev/null || true
-fi
+for variant in Papirus Papirus-Dark Papirus-Light; do
+  if [[ -d "$ICONS_USER_DIR/$variant" ]]; then
+    chmod -R u+w "$ICONS_USER_DIR/$variant" 2>/dev/null || true
+  fi
+done
 
 if [[ ! -x "$BIN_DIR/papirus-folders" ]] && ! command -v papirus-folders >/dev/null 2>&1; then
   echo "📥 Downloading papirus-folders helper..."
   curl -sSLo "$BIN_DIR/papirus-folders" https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders || true
   chmod +x "$BIN_DIR/papirus-folders" 2>/dev/null || true
   echo "✅ papirus-folders installed to $BIN_DIR/papirus-folders"
+else
+  echo "✅ papirus-folders is ready."
 fi
 
 # 5. Copy Templates
@@ -235,7 +344,8 @@ export PATH="$BIN_DIR:$PATH"
 echo ""
 echo "=========================================================="
 echo " 🎉 Installation Complete!"
-echo " GNOME & Qt (Kvantum) are now dynamically themed with Material You."
+echo " GNOME, Papirus Icons & Qt (qt5ct/qt6ct + Kvantum) are now"
+echo " dynamically themed with Material You."
 echo ""
 echo " Useful Commands:"
 echo "   - Apply theme manually: gnome-matugen-apply"
