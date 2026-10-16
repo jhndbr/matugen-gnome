@@ -18,7 +18,7 @@ echo " 🎨  GNOME Matugen Material You - Installer for Debian 13"
 echo "=========================================================="
 echo ""
 
-# 1. Install System Dependencies via APT
+# 1. Install System Dependencies
 echo "📦 Step 1: Installing system dependencies..."
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update
@@ -28,6 +28,7 @@ if command -v apt-get >/dev/null 2>&1; then
     gnome-tweaks \
     qt5ct \
     qt6ct \
+    qt5-style-kvantum \
     inotify-tools \
     libjxl-tools \
     imagemagick \
@@ -38,11 +39,30 @@ if command -v apt-get >/dev/null 2>&1; then
     wget \
     tar \
     xz-utils
+  # Install Qt6 Kvantum plugin (available on Debian 13 Trixie / Ubuntu 24.04+)
+  sudo apt-get install -y qt6-style-kvantum 2>/dev/null || true
+elif command -v pacman >/dev/null 2>&1; then
+  sudo pacman -S --needed --noconfirm \
+    sassc \
+    gnome-shell-extensions \
+    gnome-tweaks \
+    qt5ct \
+    qt6ct \
+    kvantum \
+    kvantum-qt5 \
+    inotify-tools \
+    libjxl \
+    imagemagick \
+    python-gobject \
+    curl \
+    wget \
+    tar \
+    xz
 else
-  echo "⚠️ apt-get not found. Please ensure dependencies are installed manually."
+  echo "⚠️ Package manager not recognized. Please ensure dependencies (including Kvantum & qt5ct/qt6ct) are installed manually."
 fi
 
-mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$THEMES_USER_DIR" "$ICONS_USER_DIR"
+mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$THEMES_USER_DIR" "$ICONS_USER_DIR" "${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
 
 # 2. Install Matugen
 echo ""
@@ -155,15 +175,50 @@ gnome-extensions enable user-theme@gnome-shell-extensions.gcampax.github.com 2>/
 busctl --user call org.gnome.Shell.Extensions /org/gnome/Shell/Extensions org.gnome.Shell.Extensions EnableExtension s "user-theme@gnome-shell-extensions.gcampax.github.com" 2>/dev/null || true
 echo "✅ user-theme extension enabled automatically."
 
-# 8. Configure Systemd Service
+# 8. Configure Qt / Kvantum Environment for GNOME
 echo ""
-echo "🔄 Step 8: Configuring Systemd user service..."
+echo "🪟 Step 8: Configuring Qt5/Qt6 & Kvantum environment for GNOME..."
+ENV_D_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
+mkdir -p "$ENV_D_DIR"
+cat > "$ENV_D_DIR/90-matugen-qt.conf" << 'EOF'
+QT_QPA_PLATFORMTHEME=qt5ct
+QT_STYLE_OVERRIDE=kvantum
+QT_QPA_PLATFORM=xcb
+EOF
+
+# Also add to ~/.profile for X11 / display manager login sessions
+if ! grep -q 'QT_STYLE_OVERRIDE=kvantum' "$HOME/.profile" 2>/dev/null; then
+  cat >> "$HOME/.profile" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
+export QT_QPA_PLATFORM=xcb
+EOF
+fi
+
+systemctl --user set-environment \
+  QT_QPA_PLATFORMTHEME=qt5ct \
+  QT_STYLE_OVERRIDE=kvantum \
+  QT_QPA_PLATFORM=xcb 2>/dev/null || true
+
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    QT_QPA_PLATFORMTHEME=qt5ct \
+    QT_STYLE_OVERRIDE=kvantum \
+    QT_QPA_PLATFORM=xcb 2>/dev/null || true
+fi
+echo "✅ Kvantum & native GNOME Qt titlebars configured."
+
+# 9. Configure Systemd Service
+echo ""
+echo "🔄 Step 9: Configuring Systemd user service..."
 cp "$SCRIPT_DIR/systemd/matugen-gnome.service" "$SYSTEMD_USER_DIR/matugen-gnome.service"
 systemctl --user daemon-reload
 systemctl --user enable --now matugen-gnome.service
 echo "✅ Systemd service enabled and started."
 
-# 9. Add ~/.local/bin to PATH in bashrc if needed
+# 10. Add ~/.local/bin to PATH in bashrc if needed
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   if ! grep -q 'PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
@@ -171,16 +226,16 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   fi
 fi
 
-# 10. Apply theme for the first time
+# 11. Apply theme for the first time
 echo ""
-echo "✨ Step 9: Generating initial theme..."
+echo "✨ Step 10: Generating initial theme..."
 export PATH="$BIN_DIR:$PATH"
 "$BIN_DIR/gnome-matugen-apply" || true
 
 echo ""
 echo "=========================================================="
 echo " 🎉 Installation Complete!"
-echo " GNOME is now dynamically themed with Material You."
+echo " GNOME & Qt (Kvantum) are now dynamically themed with Material You."
 echo ""
 echo " Useful Commands:"
 echo "   - Apply theme manually: gnome-matugen-apply"

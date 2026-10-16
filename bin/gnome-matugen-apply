@@ -216,7 +216,14 @@ else
 fi
 
 # Ensure output directories exist
-mkdir -p "$CONFIG_DIR/gtk-3.0" "$CONFIG_DIR/gtk-4.0" "$CONFIG_DIR/qt5ct/colors" "$CONFIG_DIR/qt6ct/colors" "$THEME_DIR"
+mkdir -p \
+  "$CONFIG_DIR/gtk-3.0" \
+  "$CONFIG_DIR/gtk-4.0" \
+  "$CONFIG_DIR/qt5ct/colors" \
+  "$CONFIG_DIR/qt6ct/colors" \
+  "$CONFIG_DIR/Kvantum/MaterialYou" \
+  "$CONFIG_DIR/environment.d" \
+  "$THEME_DIR"
 
 # Create a temporary config for matugen
 TMP_CFG="$(mktemp --suffix=.toml)"
@@ -243,6 +250,18 @@ output_path = '$CONFIG_DIR/qt5ct/colors/MaterialYou.conf'
 [templates.qt6]
 input_path = '$TEMPLATES_DIR/qtct.conf'
 output_path = '$CONFIG_DIR/qt6ct/colors/MaterialYou.conf'
+
+[templates.kdeglobals]
+input_path = '$TEMPLATES_DIR/qtct.conf'
+output_path = '$CONFIG_DIR/kdeglobals'
+
+[templates.kvantum_kvconfig]
+input_path = '$TEMPLATES_DIR/kvantum.kvconfig'
+output_path = '$CONFIG_DIR/Kvantum/MaterialYou/MaterialYou.kvconfig'
+
+[templates.kvantum_svg]
+input_path = '$TEMPLATES_DIR/kvantum.svg'
+output_path = '$CONFIG_DIR/Kvantum/MaterialYou/MaterialYou.svg'
 EOF
 
 # Build matugen command args
@@ -262,6 +281,82 @@ fi
 if ! "$MATUGEN_BIN" "${MATUGEN_ARGS[@]}"; then
   echo "⚠️ Matugen failed with image source. Retrying with fallback color (#3584e4)..." >&2
   "$MATUGEN_BIN" color hex "#3584e4" -m "$MODE" -t "$SCHEME_TYPE" -c "$TMP_CFG"
+fi
+
+# Configure Kvantum active theme
+echo "⚙️ Configuring Kvantum & Qt5/Qt6 settings..."
+cat > "$CONFIG_DIR/Kvantum/kvantum.kvconfig" << 'EOF'
+[General]
+theme=MaterialYou
+EOF
+
+# Helper function to configure qt5ct.conf and qt6ct.conf with Kvantum + MaterialYou palette
+configure_qtct() {
+  local qt_ver="$1"
+  local cfg="$CONFIG_DIR/${qt_ver}/${qt_ver}.conf"
+  local scheme_path="$CONFIG_DIR/${qt_ver}/colors/MaterialYou.conf"
+  local current_icon_theme
+  current_icon_theme="$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo "'Adwaita'")"
+  current_icon_theme="${current_icon_theme//\'/}"
+  [[ -z "$current_icon_theme" ]] && current_icon_theme="Adwaita"
+
+  if [[ -f "$cfg" ]]; then
+    python3 - "$cfg" "$scheme_path" "$current_icon_theme" << 'PYEOF'
+import sys, configparser
+
+cfg_path, scheme_path, icon_theme = sys.argv[1], sys.argv[2], sys.argv[3]
+cp = configparser.ConfigParser(interpolation=None)
+cp.optionxform = str
+try:
+    cp.read(cfg_path)
+except Exception:
+    pass
+
+if "Appearance" not in cp:
+    cp["Appearance"] = {}
+
+cp["Appearance"]["style"] = "kvantum"
+cp["Appearance"]["custom_palette"] = "true"
+cp["Appearance"]["color_scheme_path"] = scheme_path
+cp["Appearance"]["standard_dialogs"] = "xdgdesktopportal"
+if "icon_theme" not in cp["Appearance"] or not cp["Appearance"]["icon_theme"]:
+    cp["Appearance"]["icon_theme"] = icon_theme
+
+with open(cfg_path, "w") as f:
+    cp.write(f, space_around_delimiters=False)
+PYEOF
+  else
+    cat > "$cfg" << EOF
+[Appearance]
+color_scheme_path=$scheme_path
+custom_palette=true
+icon_theme=$current_icon_theme
+standard_dialogs=xdgdesktopportal
+style=kvantum
+EOF
+  fi
+}
+
+configure_qtct "qt5ct"
+configure_qtct "qt6ct"
+
+# Ensure Qt environment variables for Kvantum + native GNOME window titlebar decorations
+cat > "$CONFIG_DIR/environment.d/90-matugen-qt.conf" << 'EOF'
+QT_QPA_PLATFORMTHEME=qt5ct
+QT_STYLE_OVERRIDE=kvantum
+QT_QPA_PLATFORM=xcb
+EOF
+
+systemctl --user set-environment \
+  QT_QPA_PLATFORMTHEME=qt5ct \
+  QT_STYLE_OVERRIDE=kvantum \
+  QT_QPA_PLATFORM=xcb 2>/dev/null || true
+
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    QT_QPA_PLATFORMTHEME=qt5ct \
+    QT_STYLE_OVERRIDE=kvantum \
+    QT_QPA_PLATFORM=xcb 2>/dev/null || true
 fi
 
 # Compile GNOME Shell CSS

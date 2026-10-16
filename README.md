@@ -10,20 +10,20 @@ Automatic, dynamic Material You (Material Design 3) theme generator and applier 
 - 🌓 **Instant Light / Dark Mode Sync**: Reacts immediately when toggling GNOME's Dark/Light mode using native GNOME GSettings/GIO event listeners.
 - 📁 **Adaptive Papirus Folder Icons**: Dynamically adjusts Papirus folder icon colors to match your Material You accent palette.
 - 🐚 **Full GNOME Shell Theming**: Dynamically re-compiles the GNOME Shell stylesheet (`Material-You`) with `sassc` and applies it in real-time without restarting GNOME.
-- 🪟 **Unified GTK 3 & GTK 4**: Themes Libadwaita (GTK4) and legacy GTK3 applications (via `adw-gtk3`) with identical colors.
-- ⚙️ **Qt Support**: Generates color schemes for `qt5ct` and `qt6ct`.
-- 🔄 **Native Background Daemon**: Runs as a lightweight Systemd user service monitoring `gsettings` changes via GIO with zero CPU overhead and instant response.
+- 🪟 **Unified GTK 3 & GTK 4**: Themes Libadwaita (GTK4) and legacy GTK3 applications (via `adw-gtk3`) with matching colors.
+- ⚙️ **Qt 5 & Qt 6 + Kvantum Support**: Automatically generates a dynamic `MaterialYou` Kvantum SVG/config theme, configures `qt5ct`, `qt6ct`, and `kdeglobals`, and sets GNOME session variables so Qt applications have unified Material You widgets and properly styled native GNOME window titlebars.
+- 🔄 **Native Background Daemon**: Runs as an asynchronous, lightweight Systemd user service monitoring `gsettings` changes via GIO with zero CPU overhead and instant response.
 
 ---
 
 ## 📋 Requirements
 
 The installer automatically installs and configures:
-- **Debian 13 (Trixie)** / Ubuntu / Fedora with GNOME 45, 46, 47, or 48.
+- **Debian 13 (Trixie)** / Ubuntu / Arch / Fedora with GNOME 45, 46, 47, or 48.
 - `sassc`
 - `gnome-shell-extensions` (specifically `user-theme`)
 - `gnome-tweaks`
-- `qt5ct` & `qt6ct`
+- `qt5ct`, `qt6ct`, `qt5-style-kvantum` & `qt6-style-kvantum`
 - `papirus-icon-theme` & `papirus-folders`
 - `libjxl-tools` & `imagemagick` (for `.jxl` wallpapers)
 - `python3-gi` (for native GSettings events)
@@ -47,11 +47,12 @@ The installer automatically installs and configures:
    ```
 
 3. **That's it!** The installer will:
-   - Install required packages.
+   - Install required system packages (including Kvantum & Qt5ct/Qt6ct).
    - Install Papirus icon theme & `papirus-folders`.
    - Set up templates in `~/.config/gnome-matugen/templates`.
    - Install the helper binaries in `~/.local/bin/`.
    - Enable the `user-theme` GNOME extension.
+   - Configure Qt/Kvantum environment variables (`~/.config/environment.d/90-matugen-qt.conf`) for native GNOME titlebars.
    - Start the background auto-theming service (`matugen-gnome.service`).
    - Apply the theme and sync folder icons immediately.
 
@@ -124,7 +125,9 @@ matugen-gnome-themer/
 │   └── matugen-gnome.service    # Systemd user unit
 ├── templates/
 │   ├── gtk.css                  # Libadwaita / GTK3 & GTK4 color definitions
-│   ├── qtct.conf                # Qt5ct / Qt6ct palette definitions
+│   ├── qtct.conf                # Qt5ct / Qt6ct & kdeglobals palette definitions
+│   ├── kvantum.kvconfig         # Kvantum Material You configuration template
+│   ├── kvantum.svg              # Kvantum Material You vector theme template
 │   ├── gnome-shell.scss         # GNOME Shell root stylesheet
 │   ├── gnome-shell-colors.scss  # GNOME Shell dynamic color mapping
 │   └── gnome-shell-sass/        # Modular GNOME Shell SCSS sources
