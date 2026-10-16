@@ -295,14 +295,33 @@ QT_STYLE_OVERRIDE=kvantum
 QT_QPA_PLATFORM=xcb
 EOF
 
-# Also add to ~/.profile for X11 / display manager login sessions
+# Add to ~/.profile for login sessions
 if ! grep -q 'QT_STYLE_OVERRIDE=kvantum' "$HOME/.profile" 2>/dev/null; then
   cat >> "$HOME/.profile" << 'EOF'
 
 # GNOME Matugen Qt / Kvantum integration
 export QT_QPA_PLATFORMTHEME=qt5ct
 export QT_STYLE_OVERRIDE=kvantum
-export QT_QPA_PLATFORM=xcb
+EOF
+fi
+
+# Add to ~/.bashrc for interactive bash terminals
+if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'QT_QPA_PLATFORMTHEME=qt5ct' "$HOME/.bashrc" 2>/dev/null; then
+  cat >> "$HOME/.bashrc" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
+EOF
+fi
+
+# Add to ~/.zshrc for interactive zsh terminals
+if [[ -f "$HOME/.zshrc" ]] && ! grep -q 'QT_QPA_PLATFORMTHEME=qt5ct' "$HOME/.zshrc" 2>/dev/null; then
+  cat >> "$HOME/.zshrc" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
 EOF
 fi
 

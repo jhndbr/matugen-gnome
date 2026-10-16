@@ -21,7 +21,7 @@ Usage:
   gnome-matugen-apply [OPTIONS]
 
 Options:
-  --image <path>       Path to wallpaper/image (Default: auto-detect from GNOME)
+  --image <path>       Path to wallpaper/image (Default: auto-detect from GNOME or ~/Pictures)
   --color <#hex>       Hex color value (e.g., "#3b82f6")
   --mode <dark|light>  Theme mode (Default: auto-detect from GNOME color-scheme)
   --type <type>        Scheme type (scheme-tonal-spot, scheme-expressive, scheme-fruit-salad, etc.)
@@ -44,50 +44,63 @@ if [[ -d "$REPO_TEMPLATES_DIR" ]]; then
   cp -r "$REPO_TEMPLATES_DIR" "$TEMPLATES_DIR"
 fi
 
-# Ensure Qt (qt5ct, qt6ct, Kvantum), sassc, and Papirus dependencies are installed
-ensure_dependencies() {
-  local missing_pkgs=()
-  if ! command -v sassc >/dev/null 2>&1; then
-    missing_pkgs+=("sassc")
-  fi
-  if ! command -v qt5ct >/dev/null 2>&1; then
-    missing_pkgs+=("qt5ct")
-  fi
-  if ! command -v qt6ct >/dev/null 2>&1; then
-    missing_pkgs+=("qt6ct")
-  fi
-  if ! command -v kvantummanager >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-      missing_pkgs+=("qt-style-kvantum" "qt5-style-kvantum" "qt6-style-kvantum")
-    elif command -v pacman >/dev/null 2>&1; then
-      missing_pkgs+=("kvantum" "kvantum-qt5")
-    elif command -v dnf >/dev/null 2>&1; then
-      missing_pkgs+=("kvantum")
-    fi
-  fi
-  if [[ ! -d "/usr/share/icons/Papirus" && ! -d "$DATA_DIR/icons/Papirus" ]]; then
-    missing_pkgs+=("papirus-icon-theme")
+# Ensure Qt environment variables are properly exported in startup scripts
+setup_qt_environment() {
+  local env_d="$CONFIG_DIR/environment.d"
+  mkdir -p "$env_d"
+
+  # 1. environment.d for systemd user sessions
+  cat > "$env_d/90-matugen-qt.conf" << 'EOF'
+QT_QPA_PLATFORMTHEME=qt5ct
+QT_STYLE_OVERRIDE=kvantum
+EOF
+
+  # 2. ~/.profile for login shells
+  if ! grep -q 'QT_QPA_PLATFORMTHEME=qt5ct' "$HOME/.profile" 2>/dev/null; then
+    cat >> "$HOME/.profile" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
+EOF
   fi
 
-  if [[ ${#missing_pkgs[@]} -gt 0 ]]; then
-    # Install automatically if running interactively in a terminal or passwordless sudo is available
-    if [[ -t 0 ]] || sudo -n true 2>/dev/null; then
-      echo "📦 Installing missing dependencies (${missing_pkgs[*]})..."
-      if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update 2>/dev/null || true
-        for pkg in "${missing_pkgs[@]}"; do
-          sudo apt-get install -y "$pkg" 2>/dev/null || true
-        done
-      elif command -v pacman >/dev/null 2>&1; then
-        sudo pacman -S --needed --noconfirm "${missing_pkgs[@]}" 2>/dev/null || true
-      elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y "${missing_pkgs[@]}" 2>/dev/null || true
-      fi
-    fi
+  # 3. ~/.bashrc for interactive bash terminals
+  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'QT_QPA_PLATFORMTHEME=qt5ct' "$HOME/.bashrc" 2>/dev/null; then
+    cat >> "$HOME/.bashrc" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
+EOF
+  fi
+
+  # 4. ~/.zshrc for interactive zsh terminals
+  if [[ -f "$HOME/.zshrc" ]] && ! grep -q 'QT_QPA_PLATFORMTHEME=qt5ct' "$HOME/.zshrc" 2>/dev/null; then
+    cat >> "$HOME/.zshrc" << 'EOF'
+
+# GNOME Matugen Qt / Kvantum integration
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_STYLE_OVERRIDE=kvantum
+EOF
+  fi
+
+  # 5. Export into current shell and user systemd session
+  export QT_QPA_PLATFORMTHEME="qt5ct"
+  export QT_STYLE_OVERRIDE="kvantum"
+
+  systemctl --user set-environment \
+    QT_QPA_PLATFORMTHEME=qt5ct \
+    QT_STYLE_OVERRIDE=kvantum 2>/dev/null || true
+
+  if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd \
+      QT_QPA_PLATFORMTHEME=qt5ct \
+      QT_STYLE_OVERRIDE=kvantum 2>/dev/null || true
   fi
 }
 
-ensure_dependencies
+setup_qt_environment
 
 # Find matugen binary
 find_matugen() {
@@ -106,12 +119,7 @@ find_matugen() {
 
 MATUGEN_BIN="$(find_matugen)"
 if [[ -z "$MATUGEN_BIN" ]]; then
-  echo "❌ Error: 'matugen' binary not found. Please run install.sh or install matugen." >&2
-  exit 1
-fi
-
-if ! command -v sassc >/dev/null 2>&1; then
-  echo "❌ Error: 'sassc' is not installed. Please install it using: sudo apt install sassc" >&2
+  echo "❌ Error: 'matugen' binary not found. Please install matugen or add it to PATH." >&2
   exit 1
 fi
 
@@ -179,43 +187,74 @@ if [[ -z "$MODE" ]]; then
   fi
 fi
 
-# Detect current wallpaper if neither image nor color is specified
+# Detect current wallpaper dynamically (GNOME settings with robust fallback to user's Pictures/Sway)
 if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
-  URI_DARK="$(gsettings get org.gnome.desktop.background picture-uri-dark 2>/dev/null || echo "")"
-  URI_LIGHT="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
-  URI_DARK="${URI_DARK//\'/}"
-  URI_LIGHT="${URI_LIGHT//\'/}"
+  IMAGE_PATH="$(python3 - "$MODE" << 'PYEOF'
+import os, sys, glob, subprocess, urllib.parse
 
-  URI="$URI_LIGHT"
-  if [[ "$MODE" == "dark" && -n "$URI_DARK" && "$URI_DARK" != "''" ]]; then
-    URI="$URI_DARK"
-  fi
-  if [[ -z "$URI" || "$URI" == "''" ]]; then
-    URI="$URI_LIGHT"
-  fi
+mode = sys.argv[1]
 
-  if [[ "$URI" =~ ^file:// ]]; then
-    IMAGE_PATH="${URI#file://}"
-    IMAGE_PATH="$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$IMAGE_PATH" 2>/dev/null || echo "$IMAGE_PATH")"
-  else
-    IMAGE_PATH="$URI"
-  fi
-fi
+# 1. GNOME GSettings
+keys = ['picture-uri-dark', 'picture-uri'] if mode == 'dark' else ['picture-uri', 'picture-uri-dark']
+for key in keys:
+    try:
+        uri = subprocess.check_output(
+            ['gsettings', 'get', 'org.gnome.desktop.background', key],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip().strip("'\"")
+        if uri.startswith('file://'):
+            p = urllib.parse.unquote(uri[7:])
+            if os.path.isfile(p):
+                print(p)
+                sys.exit(0)
+        elif os.path.isfile(uri):
+            print(uri)
+            sys.exit(0)
+    except Exception:
+        pass
 
-if [[ -n "$IMAGE_PATH" && ! -f "$IMAGE_PATH" ]]; then
-  echo "⚠️ Warning: Wallpaper '$IMAGE_PATH' not found." >&2
-  URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || echo "")"
-  URI="${URI//\'/}"
-  IMAGE_PATH="${URI#file://}"
-  IMAGE_PATH="$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$IMAGE_PATH" 2>/dev/null || echo "$IMAGE_PATH")"
+# 2. Check running swaybg or sway config
+try:
+    out = subprocess.check_output(['pgrep', '-a', 'swaybg'], text=True, stderr=subprocess.DEVNULL)
+    for part in out.split():
+        if os.path.isfile(part) and any(part.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.jxl', '.webp']):
+            print(part)
+            sys.exit(0)
+except Exception:
+    pass
+
+# 3. Common user wallpaper paths
+home = os.path.expanduser('~')
+candidates = [
+    os.path.join(home, 'Pictures', '1.jpg'),
+    os.path.join(home, 'Pictures', 'wallpaper.png'),
+    os.path.join(home, 'Pictures', 'wallpaper.jpg'),
+    os.path.join(home, 'Pictures', 'wall.png'),
+    os.path.join(home, 'Pictures', 'wall.jpg'),
+    '/usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png',
+]
+for c in candidates:
+    if os.path.isfile(c):
+        print(c)
+        sys.exit(0)
+
+# 4. Newest image in ~/Pictures (excluding screenshots)
+pics = glob.glob(os.path.join(home, 'Pictures', '*.*'))
+valid = [p for p in pics if any(p.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.jxl']) and 'screenshot' not in p.lower()]
+if valid:
+    valid.sort(key=os.path.getmtime, reverse=True)
+    print(valid[0])
+    sys.exit(0)
+PYEOF
+  )"
 fi
 
 if [[ -z "$IMAGE_PATH" && -z "$COLOR_HEX" ]]; then
-  echo "❌ Error: Could not determine an image or color source." >&2
-  exit 1
+  echo "⚠️ Warning: Could not detect an image file. Using fallback accent color (#3584e4)." >&2
+  COLOR_HEX="#3584e4"
 fi
 
-# Resolve XML wallpaper definitions (used by Debian desktop-base and GNOME timed backgrounds)
+# Resolve XML wallpaper definitions (Debian desktop-base / GNOME timed backgrounds)
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" && "${IMAGE_PATH,,}" == *.xml ]]; then
   RESOLVED_XML_IMG="$(python3 - "$IMAGE_PATH" "$MODE" << 'PYEOF'
 import sys, os, re
@@ -242,7 +281,7 @@ PYEOF
   fi
 fi
 
-# Handle .jxl and .svg images (Debian 13 default GNOME wallpapers)
+# Handle .jxl and .svg images
 TEMP_CONVERTED_IMAGE=""
 cleanup_temp() {
   if [[ -n "$TEMP_CONVERTED_IMAGE" && -f "$TEMP_CONVERTED_IMAGE" ]]; then
@@ -255,7 +294,7 @@ cleanup_temp() {
 trap cleanup_temp EXIT
 
 if [[ -n "$IMAGE_PATH" && ( "${IMAGE_PATH,,}" == *.jxl || "${IMAGE_PATH,,}" == *.svg ) ]]; then
-  echo "🖼️  Detected ${IMAGE_PATH##*.} wallpaper, converting to temporary PNG..."
+  echo "🖼️  Converting ${IMAGE_PATH##*.} wallpaper to temporary PNG for Matugen..."
   TEMP_CONVERTED_IMAGE="$(mktemp /tmp/matugen_wall_XXXXXX.png)"
 
   CONVERTED=false
@@ -289,7 +328,6 @@ if [[ -n "$IMAGE_PATH" && ( "${IMAGE_PATH,,}" == *.jxl || "${IMAGE_PATH,,}" == *
     fi
   fi
 
-  # GdkPixbuf fallback (built into GNOME via python3-gi)
   if [[ "$CONVERTED" != "true" ]]; then
     if python3 -c "
 import sys, gi
@@ -305,7 +343,7 @@ pb.savev(sys.argv[2], 'png', [], [])
   if [[ "$CONVERTED" == "true" && -s "$TEMP_CONVERTED_IMAGE" ]]; then
     IMAGE_PATH="$TEMP_CONVERTED_IMAGE"
   else
-    echo "⚠️ Could not convert wallpaper image. Falling back to default accent color." >&2
+    echo "⚠️ Could not convert wallpaper image. Using fallback color (#3584e4)." >&2
     IMAGE_PATH=""
     COLOR_HEX="#3584e4"
   fi
@@ -414,7 +452,7 @@ if [[ "$MODE" == "light" ]]; then
   TARGET_ICON_THEME="Papirus"
 fi
 
-# Helper function to configure qt5ct.conf and qt6ct.conf with Kvantum + MaterialYou palette + Papirus icons
+# Helper function to configure qt5ct.conf and qt6ct.conf
 configure_qtct() {
   local qt_ver="$1"
   local cfg="$CONFIG_DIR/${qt_ver}/${qt_ver}.conf"
@@ -459,28 +497,18 @@ EOF
 configure_qtct "qt5ct"
 configure_qtct "qt6ct"
 
-# Ensure Qt environment variables for Kvantum + native GNOME window titlebar decorations
-cat > "$CONFIG_DIR/environment.d/90-matugen-qt.conf" << 'EOF'
-QT_QPA_PLATFORMTHEME=qt5ct
-QT_STYLE_OVERRIDE=kvantum
-QT_QPA_PLATFORM=xcb
-EOF
+# Compile GNOME Shell CSS if sassc is available
+if command -v sassc >/dev/null 2>&1; then
+  echo "⚙️ Compiling GNOME Shell stylesheet..."
+  sassc "$TEMPLATES_DIR/gnome-shell.scss" "$THEME_DIR/gnome-shell.css" || true
 
-systemctl --user set-environment \
-  QT_QPA_PLATFORMTHEME=qt5ct \
-  QT_STYLE_OVERRIDE=kvantum \
-  QT_QPA_PLATFORM=xcb 2>/dev/null || true
-
-if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-  dbus-update-activation-environment --systemd \
-    QT_QPA_PLATFORMTHEME=qt5ct \
-    QT_STYLE_OVERRIDE=kvantum \
-    QT_QPA_PLATFORM=xcb 2>/dev/null || true
+  # Reload Shell Theme via user-theme extension
+  gsettings set org.gnome.shell.extensions.user-theme name '' 2>/dev/null || true
+  sleep 0.1
+  gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' 2>/dev/null || true
+else
+  echo "ℹ️ Note: 'sassc' not found; skipped GNOME Shell SCSS compilation. GTK, Qt & Icons applied normally."
 fi
-
-# Compile GNOME Shell CSS
-echo "⚙️ Compiling GNOME Shell stylesheet..."
-sassc "$TEMPLATES_DIR/gnome-shell.scss" "$THEME_DIR/gnome-shell.css"
 
 # Apply GNOME settings
 echo "✨ Updating GNOME Desktop settings..."
@@ -553,11 +581,6 @@ if [[ "$MODE" == "dark" ]]; then
 else
   gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' 2>/dev/null || true
 fi
-
-# Reload Shell Theme via user-theme extension
-gsettings set org.gnome.shell.extensions.user-theme name '' 2>/dev/null || true
-sleep 0.1
-gsettings set org.gnome.shell.extensions.user-theme name 'Material-You' 2>/dev/null || true
 
 # ------------------------------------------------------------------------------
 # Synchronize Papirus Folder Icons
