@@ -19,25 +19,25 @@ echo "=========================================================="
 echo ""
 
 install_apt_pkgs() {
-  if ! sudo apt-get install -y "$@" 2>/dev/null; then
+  if ! sudo apt-get install -y "$@"; then
     for pkg in "$@"; do
-      sudo apt-get install -y "$pkg" 2>/dev/null || echo "ℹ️ Optional/transitional package '$pkg' skipped."
+      sudo apt-get install -y "$pkg" || echo "ℹ️ Optional/transitional package '$pkg' skipped."
     done
   fi
 }
 
 install_pacman_pkgs() {
-  if ! sudo pacman -S --needed --noconfirm "$@" 2>/dev/null; then
+  if ! sudo pacman -S --needed --noconfirm "$@"; then
     for pkg in "$@"; do
-      sudo pacman -S --needed --noconfirm "$pkg" 2>/dev/null || echo "ℹ️ Optional package '$pkg' skipped."
+      sudo pacman -S --needed --noconfirm "$pkg" || echo "ℹ️ Optional package '$pkg' skipped."
     done
   fi
 }
 
 install_dnf_pkgs() {
-  if ! sudo dnf install -y "$@" 2>/dev/null; then
+  if ! sudo dnf install -y "$@"; then
     for pkg in "$@"; do
-      sudo dnf install -y "$pkg" 2>/dev/null || echo "ℹ️ Optional package '$pkg' skipped."
+      sudo dnf install -y "$pkg" || echo "ℹ️ Optional package '$pkg' skipped."
     done
   fi
 }
@@ -91,7 +91,8 @@ if command -v apt-get >/dev/null 2>&1; then
     qt6-wayland
 
 elif command -v pacman >/dev/null 2>&1; then
-  echo "  -> Installing packages via pacman (Arch Linux)..."
+  echo "  -> Updating pacman database and installing packages via pacman (Arch Linux)..."
+  sudo pacman -Sy || true
   install_pacman_pkgs \
     sassc \
     gnome-shell-extensions \
